@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.TaiwanCarKTV" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#FF6D00</item>
+        <item name="colorPrimaryVariant">#E65100</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#00B0FF</item>
+        <item name="android:windowBackground">#0F1115</item>
+        <item name="android:statusBarColor">#0F1115</item>
+        <item name="android:navigationBarColor">#0F1115</item>
+    </style>
+</resources>

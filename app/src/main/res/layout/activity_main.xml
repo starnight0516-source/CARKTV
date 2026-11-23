@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0F1115"
+    android:orientation="vertical">
+
+    <!-- 上半部：MV 播放區 (固定 16:9 比例，適合直式大螢幕) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/playerContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#000000">
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/playerView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:layout_constraintDimensionRatio="16:9"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:resize_mode="fit"
+            app:use_controller="true" />
+
+        <!-- 純聽歌遮罩 (夜間護眼模式) -->
+        <LinearLayout
+            android:id="@+id/audioOnlyOverlay"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="#0A0C10"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="@id/playerView"
+            app:layout_constraintEnd_toEndOf="@id/playerView"
+            app:layout_constraintStart_toStartOf="@id/playerView"
+            app:layout_constraintTop_toTopOf="@id/playerView">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="純聽歌護眼模式"
+                android:textColor="#00B0FF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvAudioOnlyTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:text="尚未播放歌曲"
+                android:textAlignment="center"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 載入中提示 -->
+        <ProgressBar
+            android:id="@+id/loadingIndicator"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="@id/playerView"
+            app:layout_constraintEnd_toEndOf="@id/playerView"
+            app:layout_constraintStart_toStartOf="@id/playerView"
+            app:layout_constraintTop_toTopOf="@id/playerView" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- 播放資訊與快捷大按鈕列 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#181B22"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView
+            android:id="@+id/tvNowPlaying"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="marquee"
+            android:singleLine="true"
+            android:text="🎵 請在下方點選歌曲開始播放"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNext"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:backgroundTint="#FF6D00"
+                android:text="切歌"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnReplay"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:backgroundTint="#2B303B"
+                android:text="重唱"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSwitchSource"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1.2"
+                android:backgroundTint="#2B303B"
+                android:text="換版本"
+                android:textColor="#00E5FF"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAudioOnly"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1.2"
+                android:backgroundTint="#2B303B"
+                android:text="純聽歌"
+                android:textColor="#FFD54F"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 分頁切換與快速搜尋列 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#12151B"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tabCatalog"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginEnd="6dp"
+            android:backgroundTint="#FF6D00"
+            android:text="點歌王大廳"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tabQueue"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="#252A34"
+            android:text="已點 (0)"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/etQuickSearch"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:background="#20242D"
+            android:hint="直接輸入歌名/歌手點歌..."
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:paddingHorizontal="12dp"
+            android:singleLine="true"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#8892A0"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnQuickAdd"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:backgroundTint="#00B0FF"
+            android:text="點歌"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- 下半部內容區：點歌王 WebView / 已點歌單 RecyclerView -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <WebView
+            android:id="@+id/webView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvQueue"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#0F1115"
+            android:padding="8dp"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>
