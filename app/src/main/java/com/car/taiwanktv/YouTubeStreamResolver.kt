@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.localization.ContentCountry
+import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
@@ -11,6 +13,7 @@ data class ResolvedStream(
     val videoUrl: String?,
     val audioUrl: String?,
     val muxedUrl: String?,
+    val hlsUrl: String?,
     val title: String
 )
 
@@ -20,7 +23,11 @@ object YouTubeStreamResolver {
     @Synchronized
     fun init() {
         if (!initialized) {
-            NewPipe.init(OkHttpDownloader())
+            NewPipe.init(
+                OkHttpDownloader(),
+                Localization("zh", "TW"),
+                ContentCountry("TW")
+            )
             initialized = true
         }
     }
@@ -52,23 +59,28 @@ object YouTubeStreamResolver {
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, fullUrl)
 
         val bestVideo = streamInfo.videoOnlyStreams
-            .filter { it.format?.suffix == "mp4" }
+            .filter { it.isUrl && it.format?.suffix == "mp4" }
             .sortedByDescending { it.height }
             .firstOrNull { it.height <= 1080 }
-            ?: streamInfo.videoOnlyStreams.firstOrNull()
+            ?: streamInfo.videoOnlyStreams.firstOrNull { it.isUrl }
 
         val bestAudio = streamInfo.audioStreams
+            .filter { it.isUrl }
             .sortedByDescending { it.averageBitrate }
             .firstOrNull()
 
         val muxed = streamInfo.videoStreams
+            .filter { it.isUrl }
             .sortedByDescending { it.height }
             .firstOrNull()
+
+        val hls = streamInfo.hlsUrl?.takeIf { it.isNotBlank() }
 
         ResolvedStream(
             videoUrl = bestVideo?.content,
             audioUrl = bestAudio?.content,
             muxedUrl = muxed?.content,
+            hlsUrl = hls,
             title = streamInfo.name ?: ""
         )
     }

@@ -77,7 +77,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#181B22"
+        android:background="#161920"
         android:gravity="center_vertical"
         android:orientation="vertical"
         android:padding="10dp">
@@ -117,7 +117,7 @@
                 android:layout_height="48dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:backgroundTint="#2B303B"
+                android:backgroundTint="#232833"
                 android:text="重唱"
                 android:textColor="#FFFFFF"
                 android:textSize="15sp" />
@@ -128,9 +128,9 @@
                 android:layout_height="48dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1.2"
-                android:backgroundTint="#2B303B"
+                android:backgroundTint="#232833"
                 android:text="換版本"
-                android:textColor="#00E5FF"
+                android:textColor="#40E0FF"
                 android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
@@ -138,7 +138,7 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1.2"
-                android:backgroundTint="#2B303B"
+                android:backgroundTint="#232833"
                 android:text="純聽歌"
                 android:textColor="#FFD54F"
                 android:textSize="15sp" />
@@ -149,7 +149,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#12151B"
+        android:background="#101319"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="10dp"
@@ -170,7 +170,7 @@
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:layout_marginEnd="8dp"
-            android:backgroundTint="#252A34"
+            android:backgroundTint="#232833"
             android:text="已點 (0)"
             android:textColor="#FFFFFF"
             android:textSize="14sp" />
@@ -180,7 +180,7 @@
             android:layout_width="0dp"
             android:layout_height="42dp"
             android:layout_weight="1"
-            android:background="#20242D"
+            android:background="#1E232D"
             android:hint="直接輸入歌名/歌手點歌..."
             android:imeOptions="actionSearch"
             android:inputType="text"
