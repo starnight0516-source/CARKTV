@@ -6,7 +6,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.car.taiwanktv.databinding.ItemCatalogSongBinding
 
 class CatalogAdapter(
-    private val onSongClick: (SongItem) -> Unit
+    private val onOrderClick: (SongItem) -> Unit,
+    private val onCutInClick: (SongItem) -> Unit
 ) : RecyclerView.Adapter<CatalogAdapter.ViewHolder>() {
 
     private val items = mutableListOf<SongItem>()
@@ -30,8 +31,16 @@ class CatalogAdapter(
         holder.binding.tvTitle.text = song.title
         holder.binding.tvArtist.text = song.artist.ifBlank { "精選 MV" }
 
+        // 點整列或「+ 點歌」：加入歌單（沒播歌時直接播）
         holder.binding.root.setOnClickListener {
-            onSongClick(song.copy())
+            onOrderClick(song.copy())
+        }
+        holder.binding.btnOrder.setOnClickListener {
+            onOrderClick(song.copy())
+        }
+        // 點「插播」：排到下一首最優先（沒播歌時直接播）
+        holder.binding.btnCutIn.setOnClickListener {
+            onCutInClick(song.copy())
         }
     }
 

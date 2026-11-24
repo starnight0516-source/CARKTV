@@ -11,8 +11,8 @@ android {
         applicationId = "com.car.taiwanktv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.0.0"
+        versionCode = 5
+        versionName = "2.1.0"
         multiDexEnabled = true
     }
 
@@ -55,7 +55,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-common:$media3Version")
 
-    // OkHttp, Jsoup (純背景抓歌單文字) & NewPipeExtractor v0.26.0
+    // OkHttp, Jsoup & NewPipeExtractor v0.26.0
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.18.1")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0")

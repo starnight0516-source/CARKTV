@@ -54,7 +54,7 @@
                 android:layout_marginTop="8dp"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:text="尚未播放歌曲"
+                android:text="啟動自動連播中..."
                 android:textAlignment="center"
                 android:textColor="#FFFFFF"
                 android:textSize="22sp"
@@ -88,7 +88,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="marquee"
             android:singleLine="true"
-            android:text="🎵 請在下方點選歌曲（點一下直接播或加入歌單）"
+            android:text="🎵 啟動中，即將自動連續播放..."
             android:textColor="#FFFFFF"
             android:textSize="17sp"
             android:textStyle="bold" />
@@ -183,7 +183,7 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- 分類分頁列（大按鈕橫向滑動） -->
+    <!-- 主分類分頁列 -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -239,6 +239,28 @@
                 android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabSingers"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#232833"
+                android:text="歌星點歌"
+                android:textColor="#40E0FF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabWordCount"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#232833"
+                android:text="字數分類"
+                android:textColor="#A5D6A7"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/tabQueue"
                 android:layout_width="wrap_content"
                 android:layout_height="46dp"
@@ -250,7 +272,127 @@
         </LinearLayout>
     </HorizontalScrollView>
 
-    <!-- 下半部：100% 純原生點歌清單 / 已點歌單（無 WebView、無廣告） -->
+    <!-- 字數分類次選單（點選「字數分類」時顯示） -->
+    <HorizontalScrollView
+        android:id="@+id/wordCountBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#151922"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWcAll"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#00B0FF"
+                android:text="全部"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWc1"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#252B37"
+                android:text="1字"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWc2"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#252B37"
+                android:text="2字"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWc3"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#252B37"
+                android:text="3字"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWc4"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#252B37"
+                android:text="4字"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWc5"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#252B37"
+                android:text="5字"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWc6Plus"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:backgroundTint="#252B37"
+                android:text="6字以上"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- 歌星詳情返回列（點進某位歌星時顯示） -->
+    <LinearLayout
+        android:id="@+id/singerHeaderBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#151922"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBackToSingers"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:backgroundTint="#2B3240"
+            android:text="← 返回歌星列表"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvSelectedSinger"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:text="歌星名稱"
+            android:textColor="#40E0FF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 下半部：100% 純原生點歌清單 / 歌星牆 / 已點歌單 -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -263,6 +405,15 @@
             android:background="#0F1115"
             android:clipToPadding="false"
             android:padding="10dp" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvSingers"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#0F1115"
+            android:clipToPadding="false"
+            android:padding="10dp"
+            android:visibility="gone" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvQueue"

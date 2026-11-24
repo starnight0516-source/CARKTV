@@ -41,9 +41,6 @@ object YouTubeStreamResolver {
         }
     }
 
-    /**
-     * 從台灣點歌王 mv.aspx 頁面靜默取得 videoId（不顯示網頁與廣告）
-     */
     suspend fun extractVideoIdFromCorpPage(pageUrl: String): String? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
@@ -68,10 +65,7 @@ object YouTubeStreamResolver {
         null
     }
 
-    /**
-     * 原生搜歌：直接從 YouTube 搜尋回傳乾淨的 SongItem 清單（點一下即帶入精準 videoId）
-     */
-    suspend fun searchSongItems(query: String): List<SongItem> = withContext(Dispatchers.IO) {
+    suspend fun searchSongItems(query: String, limit: Int = 30): List<SongItem> = withContext(Dispatchers.IO) {
         init()
         val yt = ServiceList.YouTube
         val extractor = yt.getSearchExtractor("$query MV")
@@ -80,7 +74,7 @@ object YouTubeStreamResolver {
         extractor.initialPage.items
             .filterIsInstance<StreamInfoItem>()
             .filter { item -> item.duration in 90..720 }
-            .take(25)
+            .take(limit)
             .map { item ->
                 val vid = extractYouTubeId(item.url)
                 SongItem(

@@ -12,3 +12,8 @@ data class SongItem(
         return if (artist.isNotBlank()) "$title - $artist" else title
     }
 }
+
+data class SingerInfo(
+    val name: String,
+    val tag: String
+)

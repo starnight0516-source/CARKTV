@@ -18,9 +18,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.car.taiwanktv.databinding.ActivityMainBinding
 import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -29,11 +31,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var player: ExoPlayer
 
     private val songQueue = mutableListOf<SongItem>()
+    private val playedHistory = LinkedHashSet<String>()
+    private var consecutiveFailures = 0
+
     private lateinit var catalogAdapter: CatalogAdapter
+    private lateinit var singerAdapter: SingerAdapter
     private lateinit var queueAdapter: QueueAdapter
 
     private var currentSong: SongItem? = null
     private var isAudioOnly = false
+    private var hasAutoStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,8 +51,8 @@ class MainActivity : AppCompatActivity() {
         setupLists()
         setupControls()
 
-        // 啟動預設載入「新歌排行」
-        selectCategoryTab(binding.tabHot, SongCategory.HOT)
+        // 啟動後載入「新歌排行」並自動開始連續播放
+        selectCategoryTab(binding.tabHot, SongCategory.HOT, autoStartPlay = true)
     }
 
     private fun setupPlayer() {
@@ -62,19 +69,25 @@ class MainActivity : AppCompatActivity() {
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    playNextInQueue()
+                    playNextOrAutoContinue()
                 }
             }
         })
     }
 
     private fun setupLists() {
-        // 點歌清單：點一下直接進歌單（若沒在播就直接播），絕無多餘彈窗或跳頁
-        catalogAdapter = CatalogAdapter { song ->
-            enqueueOrPlayDirectly(song)
-        }
+        catalogAdapter = CatalogAdapter(
+            onOrderClick = { song -> enqueueOrPlayDirectly(song) },
+            onCutInClick = { song -> cutInSongDirectly(song) }
+        )
         binding.rvCatalog.layoutManager = LinearLayoutManager(this)
         binding.rvCatalog.adapter = catalogAdapter
+
+        singerAdapter = SingerAdapter(CorpSongRepository.featuredSingers) { singer ->
+            openSingerSongs(singer)
+        }
+        binding.rvSingers.layoutManager = GridLayoutManager(this, 3)
+        binding.rvSingers.adapter = singerAdapter
 
         queueAdapter = QueueAdapter(
             items = songQueue,
@@ -91,7 +104,7 @@ class MainActivity : AppCompatActivity() {
                     val item = songQueue.removeAt(index)
                     songQueue.add(0, item)
                     queueAdapter.notifyDataSetChanged()
-                    Toast.makeText(this, "已優先插播：${item.title}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "⚡ 已移至下一首插播：${item.title}", Toast.LENGTH_SHORT).show()
                 }
             },
             onRemove = { index ->
@@ -108,7 +121,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupControls() {
-        binding.btnNext.setOnClickListener { playNextInQueue() }
+        binding.btnNext.setOnClickListener { playNextOrAutoContinue() }
 
         binding.btnReplay.setOnClickListener {
             player.seekTo(0)
@@ -131,15 +144,44 @@ class MainActivity : AppCompatActivity() {
             binding.tvAudioOnlyTitle.text = currentSong?.displayName() ?: "尚未播放歌曲"
         }
 
-        // 分類分頁按鈕
+        // 主分類分頁
         binding.tabHot.setOnClickListener { selectCategoryTab(binding.tabHot, SongCategory.HOT) }
         binding.tabTaiwanese.setOnClickListener { selectCategoryTab(binding.tabTaiwanese, SongCategory.TAIWANESE) }
         binding.tabMandarin.setOnClickListener { selectCategoryTab(binding.tabMandarin, SongCategory.MANDARIN) }
         binding.tabClassics.setOnClickListener { selectCategoryTab(binding.tabClassics, SongCategory.CLASSICS) }
 
+        // 歌星點歌分頁
+        binding.tabSingers.setOnClickListener { showSingerWall() }
+        binding.btnBackToSingers.setOnClickListener { showSingerWall() }
+
+        // 字數分類分頁
+        binding.tabWordCount.setOnClickListener {
+            highlightMainTab(binding.tabWordCount)
+            binding.wordCountBar.visibility = View.VISIBLE
+            binding.singerHeaderBar.visibility = View.GONE
+            binding.rvCatalog.visibility = View.VISIBLE
+            binding.rvSingers.visibility = View.GONE
+            binding.rvQueue.visibility = View.GONE
+            binding.listLoadingOverlay.visibility = View.GONE
+            selectWordCountFilter(binding.btnWcAll, 0)
+        }
+
+        // 字數次選單按鈕
+        binding.btnWcAll.setOnClickListener { selectWordCountFilter(binding.btnWcAll, 0) }
+        binding.btnWc1.setOnClickListener { selectWordCountFilter(binding.btnWc1, 1) }
+        binding.btnWc2.setOnClickListener { selectWordCountFilter(binding.btnWc2, 2) }
+        binding.btnWc3.setOnClickListener { selectWordCountFilter(binding.btnWc3, 3) }
+        binding.btnWc4.setOnClickListener { selectWordCountFilter(binding.btnWc4, 4) }
+        binding.btnWc5.setOnClickListener { selectWordCountFilter(binding.btnWc5, 5) }
+        binding.btnWc6Plus.setOnClickListener { selectWordCountFilter(binding.btnWc6Plus, 6) }
+
+        // 已點歌單分頁
         binding.tabQueue.setOnClickListener {
-            highlightTab(binding.tabQueue)
+            highlightMainTab(binding.tabQueue)
+            binding.wordCountBar.visibility = View.GONE
+            binding.singerHeaderBar.visibility = View.GONE
             binding.rvCatalog.visibility = View.GONE
+            binding.rvSingers.visibility = View.GONE
             binding.rvQueue.visibility = View.VISIBLE
             binding.listLoadingOverlay.visibility = View.GONE
         }
@@ -161,8 +203,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun highlightTab(activeTab: MaterialButton?) {
-        val allTabs = listOf(binding.tabHot, binding.tabTaiwanese, binding.tabMandarin, binding.tabClassics, binding.tabQueue)
+    private fun highlightMainTab(activeTab: MaterialButton?) {
+        val allTabs = listOf(
+            binding.tabHot,
+            binding.tabTaiwanese,
+            binding.tabMandarin,
+            binding.tabClassics,
+            binding.tabSingers,
+            binding.tabWordCount,
+            binding.tabQueue
+        )
         for (tab in allTabs) {
             tab.setBackgroundColor(
                 if (tab == activeTab) Color.parseColor("#FF6D00") else Color.parseColor("#232833")
@@ -170,9 +220,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun selectCategoryTab(tab: MaterialButton, category: SongCategory) {
-        highlightTab(tab)
+    private fun selectCategoryTab(tab: MaterialButton, category: SongCategory, autoStartPlay: Boolean = false) {
+        highlightMainTab(tab)
+        binding.wordCountBar.visibility = View.GONE
+        binding.singerHeaderBar.visibility = View.GONE
         binding.rvCatalog.visibility = View.VISIBLE
+        binding.rvSingers.visibility = View.GONE
         binding.rvQueue.visibility = View.GONE
         binding.listLoadingOverlay.visibility = View.VISIBLE
         binding.tvListLoadingMsg.text = "載入歌單中..."
@@ -182,19 +235,96 @@ class MainActivity : AppCompatActivity() {
             catalogAdapter.submitList(songs)
             binding.rvCatalog.scrollToPosition(0)
             binding.listLoadingOverlay.visibility = View.GONE
+
+            // 一打開 App 自動開播並連續播放
+            if (autoStartPlay && !hasAutoStarted && currentSong == null) {
+                hasAutoStarted = true
+                playNextOrAutoContinue()
+            }
         }
     }
 
-    private fun performNativeSearch(query: String) {
-        highlightTab(null)
+    private fun showSingerWall() {
+        highlightMainTab(binding.tabSingers)
+        binding.wordCountBar.visibility = View.GONE
+        binding.singerHeaderBar.visibility = View.GONE
+        binding.rvCatalog.visibility = View.GONE
+        binding.rvQueue.visibility = View.GONE
+        binding.rvSingers.visibility = View.VISIBLE
+        binding.listLoadingOverlay.visibility = View.GONE
+    }
+
+    private fun openSingerSongs(singer: SingerInfo) {
+        binding.rvSingers.visibility = View.GONE
         binding.rvCatalog.visibility = View.VISIBLE
+        binding.singerHeaderBar.visibility = View.VISIBLE
+        binding.tvSelectedSinger.text = "🎤 ${singer.name} 精選歌單"
+
+        // 1. 先瞬間顯示本地大歌庫裡該歌星的歌曲
+        val localSongs = CorpSongRepository.filterBySingerLocal(singer.name)
+        catalogAdapter.submitList(localSongs)
+        binding.rvCatalog.scrollToPosition(0)
+
+        // 2. 背景同步從 YouTube 擴充更多該歌星的熱門 MV
+        lifecycleScope.launch {
+            if (localSongs.isEmpty()) {
+                binding.listLoadingOverlay.visibility = View.VISIBLE
+                binding.tvListLoadingMsg.text = "搜尋 ${singer.name} 的熱門歌曲..."
+            }
+            try {
+                val remoteSongs = YouTubeStreamResolver.searchSongItems("${singer.name} 經典歌曲", limit = 25)
+                val combined = LinkedHashMap<String, SongItem>()
+                for (s in localSongs) combined[s.title] = s
+                for (s in remoteSongs) {
+                    if (!combined.containsKey(s.title)) combined[s.title] = s
+                }
+                if (binding.singerHeaderBar.visibility == View.VISIBLE &&
+                    binding.tvSelectedSinger.text.contains(singer.name)
+                ) {
+                    catalogAdapter.submitList(combined.values.toList())
+                }
+            } catch (_: Exception) {
+                // 離線或限流時仍保有本地歌單
+            } finally {
+                binding.listLoadingOverlay.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun selectWordCountFilter(activeBtn: MaterialButton, wordCount: Int) {
+        val allBtns = listOf(
+            binding.btnWcAll, binding.btnWc1, binding.btnWc2,
+            binding.btnWc3, binding.btnWc4, binding.btnWc5, binding.btnWc6Plus
+        )
+        for (btn in allBtns) {
+            btn.setBackgroundColor(
+                if (btn == activeBtn) Color.parseColor("#00B0FF") else Color.parseColor("#252B37")
+            )
+        }
+        val filtered = CorpSongRepository.filterByWordCount(wordCount)
+        catalogAdapter.submitList(filtered)
+        binding.rvCatalog.scrollToPosition(0)
+        val label = when {
+            wordCount == 0 -> "全部歌庫"
+            wordCount >= 6 -> "6字以上"
+            else -> "${wordCount}字歌"
+        }
+        Toast.makeText(this, "$label：共 ${filtered.size} 首", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun performNativeSearch(query: String) {
+        highlightMainTab(null)
+        binding.wordCountBar.visibility = View.GONE
+        binding.singerHeaderBar.visibility = View.GONE
+        binding.rvCatalog.visibility = View.VISIBLE
+        binding.rvSingers.visibility = View.GONE
         binding.rvQueue.visibility = View.GONE
         binding.listLoadingOverlay.visibility = View.VISIBLE
         binding.tvListLoadingMsg.text = "搜尋「$query」中..."
 
         lifecycleScope.launch {
             try {
-                val results = YouTubeStreamResolver.searchSongItems(query)
+                val results = YouTubeStreamResolver.searchSongItems(query, limit = 30)
                 if (results.isEmpty()) {
                     Toast.makeText(this@MainActivity, "找不到「$query」相關歌曲", Toast.LENGTH_SHORT).show()
                 } else {
@@ -210,9 +340,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 純粹點歌邏輯：
-     * - 沒在播歌：點一下直接送上方立刻播放
-     * - 正在播歌：點一下直接排入已點清單，無任何多餘彈窗或跳轉
+     * 一般點歌（排到已點清單最後；若沒在播則直接開播）
      */
     private fun enqueueOrPlayDirectly(song: SongItem) {
         if (currentSong == null && !player.isPlaying) {
@@ -229,23 +357,56 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun playNextInQueue() {
+    /**
+     * 優先插播（直接排到已點清單第 1 位，這首播完馬上播它；若沒在播則直接開播）
+     */
+    private fun cutInSongDirectly(song: SongItem) {
+        if (currentSong == null && !player.isPlaying) {
+            playSong(song)
+        } else {
+            songQueue.add(0, song)
+            queueAdapter.notifyDataSetChanged()
+            updateQueueBadge()
+            Toast.makeText(
+                this,
+                "⚡ 已插播（下一首立即播放）：${song.title}",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    /**
+     * 連續播放核心：
+     * 1. 若「已點歌單」有歌 → 播下一首已點歌曲
+     * 2. 若「已點歌單」播完 → 自動從完整大歌庫隨機挑一首未重複歌曲無縫連播（公播模式）
+     */
+    private fun playNextOrAutoContinue() {
         if (songQueue.isNotEmpty()) {
             val next = songQueue.removeAt(0)
             queueAdapter.notifyDataSetChanged()
             updateQueueBadge()
-            playSong(next)
-        } else {
-            currentSong = null
-            player.stop()
-            binding.tvNowPlaying.text = "🎵 歌單已播完，請在下方點選新歌"
-            Toast.makeText(this, "已點清單已播完", Toast.LENGTH_SHORT).show()
+            playSong(next, isAutoPlay = false)
+            return
         }
+
+        val pool = CorpSongRepository.getAllBuiltInAndCachedSongs()
+        if (pool.isEmpty()) return
+
+        var unplayed = pool.filter { !playedHistory.contains(it.title) }
+        if (unplayed.isEmpty()) {
+            playedHistory.clear()
+            unplayed = pool
+        }
+
+        val randomNext = unplayed.random().copy()
+        playSong(randomNext, isAutoPlay = true)
     }
 
-    private fun playSong(song: SongItem) {
+    private fun playSong(song: SongItem, isAutoPlay: Boolean = false) {
         currentSong = song
-        binding.tvNowPlaying.text = "🎵 載入中：${song.displayName()}"
+        playedHistory.add(song.title)
+        val prefix = if (isAutoPlay) "📻 自動連播" else "🎵 正在播放"
+        binding.tvNowPlaying.text = "⏳ 載入中：${song.displayName()}"
         binding.tvAudioOnlyTitle.text = song.displayName()
         binding.loadingIndicator.visibility = View.VISIBLE
 
@@ -253,10 +414,18 @@ class MainActivity : AppCompatActivity() {
             try {
                 val resolved = resolveWithFallback(song)
                 startExoPlayer(resolved)
-                binding.tvNowPlaying.text = "🎵 正在播放：${song.displayName()}"
+                consecutiveFailures = 0
+                binding.tvNowPlaying.text = "$prefix：${song.displayName()}"
             } catch (e: Exception) {
-                binding.tvNowPlaying.text = "⚠️ 載入失敗：${song.title}（請按換版本）"
-                Toast.makeText(this@MainActivity, "無法載入 MV：${e.message}", Toast.LENGTH_LONG).show()
+                consecutiveFailures++
+                binding.tvNowPlaying.text = "⚠️ 載入失敗：${song.title}"
+                Toast.makeText(this@MainActivity, "跳過無法載入的歌曲：${song.title}", Toast.LENGTH_SHORT).show()
+
+                // 若為自動連播或連續失敗小於 3 次，自動跳下一首避免車上冷場
+                if (consecutiveFailures < 3) {
+                    delay(1500)
+                    playNextOrAutoContinue()
+                }
             } finally {
                 binding.loadingIndicator.visibility = View.GONE
             }
@@ -264,21 +433,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun resolveWithFallback(song: SongItem): ResolvedStream {
-        // 1. 若有來自台灣點歌王的連結且尚未取得 videoId，先靜默取一次 videoId
         if (song.videoId.isNullOrBlank() && !song.corpMvUrl.isNullOrBlank()) {
             song.videoId = YouTubeStreamResolver.extractVideoIdFromCorpPage(song.corpMvUrl)
         }
 
-        // 2. 有 videoId 直接解析播放
         if (!song.videoId.isNullOrBlank()) {
             try {
                 return YouTubeStreamResolver.resolveStream(song.videoId!!)
             } catch (_: Exception) {
-                // 若原影片下架或受限，自動退回用歌名+歌手搜尋官方 MV
             }
         }
 
-        // 3. 以歌名+歌手搜尋官方 MV
         if (song.candidateUrls.isEmpty()) {
             song.candidateUrls = YouTubeStreamResolver.searchCandidates(song.displayName())
             song.currentCandidateIndex = 0
@@ -303,6 +468,7 @@ class MainActivity : AppCompatActivity() {
                 if (song.candidateUrls.isNotEmpty()) {
                     val resolved = YouTubeStreamResolver.resolveStream(song.candidateUrls[song.currentCandidateIndex])
                     startExoPlayer(resolved)
+                    consecutiveFailures = 0
                     binding.tvNowPlaying.text = "🎵 正在播放：${song.displayName()}"
                     Toast.makeText(this@MainActivity, "已切換至第 ${song.currentCandidateIndex + 1} 個版本", Toast.LENGTH_SHORT).show()
                 }
