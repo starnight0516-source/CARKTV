@@ -6,7 +6,7 @@
     android:background="#0F1115"
     android:orientation="vertical">
 
-    <!-- 上半部：MV 播放區 (固定 16:9 比例，適合直式大螢幕) -->
+    <!-- 上半部：MV 播放區 (固定 16:9 比例) -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/playerContainer"
         android:layout_width="match_parent"
@@ -88,7 +88,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="marquee"
             android:singleLine="true"
-            android:text="🎵 請在下方點選歌曲開始播放"
+            android:text="🎵 請在下方點選歌曲（點一下直接播或加入歌單）"
             android:textColor="#FFFFFF"
             android:textSize="17sp"
             android:textStyle="bold" />
@@ -145,7 +145,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 分頁切換與快速搜尋列 -->
+    <!-- 搜尋列（原生搜尋，零廣告） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -153,71 +153,147 @@
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="10dp"
-        android:paddingVertical="6dp">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/tabCatalog"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:layout_marginEnd="6dp"
-            android:backgroundTint="#FF6D00"
-            android:text="點歌王大廳"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/tabQueue"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:layout_marginEnd="8dp"
-            android:backgroundTint="#232833"
-            android:text="已點 (0)"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp" />
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp">
 
         <EditText
-            android:id="@+id/etQuickSearch"
+            android:id="@+id/etSearch"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="46dp"
             android:layout_weight="1"
             android:background="#1E232D"
-            android:hint="直接輸入歌名/歌手點歌..."
+            android:hint="輸入歌名或歌手搜尋（例如：江蕙、周杰倫、伍佰）"
             android:imeOptions="actionSearch"
             android:inputType="text"
-            android:paddingHorizontal="12dp"
+            android:paddingHorizontal="14dp"
             android:singleLine="true"
             android:textColor="#FFFFFF"
             android:textColorHint="#8892A0"
-            android:textSize="14sp" />
+            android:textSize="15sp" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnQuickAdd"
+            android:id="@+id/btnSearch"
             android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:layout_marginStart="6dp"
+            android:layout_height="46dp"
+            android:layout_marginStart="8dp"
             android:backgroundTint="#00B0FF"
-            android:text="點歌"
+            android:text="搜歌"
             android:textColor="#FFFFFF"
-            android:textSize="14sp" />
+            android:textSize="15sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- 下半部內容區：點歌王 WebView / 已點歌單 RecyclerView -->
+    <!-- 分類分頁列（大按鈕橫向滑動） -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#101319"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabHot"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#FF6D00"
+                android:text="新歌排行"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabTaiwanese"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#232833"
+                android:text="台語金曲"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabMandarin"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#232833"
+                android:text="國語熱門"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabClassics"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#232833"
+                android:text="經典對唱"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/tabQueue"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:backgroundTint="#232833"
+                android:text="已點 (0)"
+                android:textColor="#FFD54F"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- 下半部：100% 純原生點歌清單 / 已點歌單（無 WebView、無廣告） -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <WebView
-            android:id="@+id/webView"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvCatalog"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"
+            android:background="#0F1115"
+            android:clipToPadding="false"
+            android:padding="10dp" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rvQueue"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="#0F1115"
-            android:padding="8dp"
+            android:clipToPadding="false"
+            android:padding="10dp"
             android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/listLoadingOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#AA0F1115"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="42dp"
+                android:layout_height="42dp" />
+
+            <TextView
+                android:id="@+id/tvListLoadingMsg"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="正在載入歌單..."
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+        </LinearLayout>
     </FrameLayout>
 </LinearLayout>

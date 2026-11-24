@@ -7,6 +7,7 @@ import com.car.taiwanktv.databinding.ItemQueueSongBinding
 
 class QueueAdapter(
     private val items: MutableList<SongItem>,
+    private val onPlayNow: (Int) -> Unit,
     private val onMoveTop: (Int) -> Unit,
     private val onRemove: (Int) -> Unit
 ) : RecyclerView.Adapter<QueueAdapter.ViewHolder>() {
@@ -22,8 +23,12 @@ class QueueAdapter(
         val song = items[position]
         holder.binding.tvIndex.text = "${position + 1}."
         holder.binding.tvSongTitle.text = song.title
-        holder.binding.tvSongArtist.text = song.artist.ifBlank { "點歌清單" }
+        holder.binding.tvSongArtist.text = song.artist.ifBlank { "待播清單" }
 
+        holder.binding.btnPlayNow.setOnClickListener {
+            val pos = holder.bindingAdapterPosition
+            if (pos != RecyclerView.NO_POSITION) onPlayNow(pos)
+        }
         holder.binding.btnMoveTop.setOnClickListener {
             val pos = holder.bindingAdapterPosition
             if (pos != RecyclerView.NO_POSITION) onMoveTop(pos)

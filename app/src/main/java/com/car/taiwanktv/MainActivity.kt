@@ -1,17 +1,12 @@
 package com.car.taiwanktv
 
-import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.webkit.JavascriptInterface
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.AudioAttributes
@@ -25,6 +20,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.car.taiwanktv.databinding.ActivityMainBinding
+import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -33,7 +29,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var player: ExoPlayer
 
     private val songQueue = mutableListOf<SongItem>()
+    private lateinit var catalogAdapter: CatalogAdapter
     private lateinit var queueAdapter: QueueAdapter
+
     private var currentSong: SongItem? = null
     private var isAudioOnly = false
 
@@ -43,9 +41,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupPlayer()
-        setupQueueList()
-        setupWebView()
+        setupLists()
         setupControls()
+
+        // 啟動預設載入「新歌排行」
+        selectCategoryTab(binding.tabHot, SongCategory.HOT)
     }
 
     private fun setupPlayer() {
@@ -68,9 +68,24 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun setupQueueList() {
+    private fun setupLists() {
+        // 點歌清單：點一下直接進歌單（若沒在播就直接播），絕無多餘彈窗或跳頁
+        catalogAdapter = CatalogAdapter { song ->
+            enqueueOrPlayDirectly(song)
+        }
+        binding.rvCatalog.layoutManager = LinearLayoutManager(this)
+        binding.rvCatalog.adapter = catalogAdapter
+
         queueAdapter = QueueAdapter(
             items = songQueue,
+            onPlayNow = { index ->
+                if (index in songQueue.indices) {
+                    val item = songQueue.removeAt(index)
+                    queueAdapter.notifyDataSetChanged()
+                    updateQueueBadge()
+                    playSong(item)
+                }
+            },
             onMoveTop = { index ->
                 if (index > 0 && index < songQueue.size) {
                     val item = songQueue.removeAt(index)
@@ -90,155 +105,6 @@ class MainActivity : AppCompatActivity() {
         )
         binding.rvQueue.layoutManager = LinearLayoutManager(this)
         binding.rvQueue.adapter = queueAdapter
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView() {
-        binding.webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            useWideViewPort = true
-            loadWithOverviewMode = true
-        }
-        binding.webView.setBackgroundColor(Color.parseColor("#0F1115"))
-        binding.webView.addJavascriptInterface(WebAppInterface(), "AndroidBridge")
-
-        binding.webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                if (url.contains("youtube.com/watch") || url.contains("youtu.be/")) {
-                    val videoId = extractYouTubeId(url)
-                    if (videoId != null) {
-                        val pageTitle = view?.title?.replace(Regex("-\\s*台灣點歌王.*"), "")?.trim() ?: "YouTube MV"
-                        promptAddSong(SongItem(title = pageTitle, videoId = videoId))
-                        return true
-                    }
-                }
-                return false
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                injectCarDarkThemeAndInterceptor(view)
-            }
-        }
-
-        binding.webView.loadUrl("https://song.corp.com.tw/")
-    }
-
-    private fun injectCarDarkThemeAndInterceptor(webView: WebView?) {
-        val js = """
-            (function() {
-                if (!document.getElementById('car-ktv-style')) {
-                    var style = document.createElement('style');
-                    style.id = 'car-ktv-style';
-                    style.innerHTML = `
-                        body, html, .container, .content, div, section {
-                            background-color: #0F1115 !important;
-                            color: #E8ECF2 !important;
-                        }
-                        a { color: #40C4FF !important; font-size: 16px !important; }
-                        ins.adsbygoogle, .adsbygoogle, iframe[src*="google"], .ad, .banner {
-                            display: none !important;
-                        }
-                        input, select {
-                            background-color: #1E232D !important;
-                            color: #FFFFFF !important;
-                            border: 1px solid #3A4252 !important;
-                            min-height: 40px !important;
-                            font-size: 16px !important;
-                        }
-                        button:not(#car-play-yt-btn) {
-                            background-color: #1E232D !important;
-                            color: #FFFFFF !important;
-                            border: 1px solid #3A4252 !important;
-                            min-height: 40px !important;
-                            font-size: 16px !important;
-                        }
-                        #car-play-yt-btn {
-                            position: fixed !important;
-                            bottom: 18px !important;
-                            right: 18px !important;
-                            z-index: 999999 !important;
-                            background-color: #FF6D00 !important;
-                            color: #FFFFFF !important;
-                            padding: 14px 22px !important;
-                            border-radius: 12px !important;
-                            font-size: 18px !important;
-                            font-weight: bold !important;
-                            border: 2px solid #FFB74D !important;
-                            box-shadow: 0 4px 16px rgba(0,0,0,0.8) !important;
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
-
-                function detectYouTubeAndHook() {
-                    var vid = null;
-                    var iframes = document.querySelectorAll('iframe[src*="youtube.com/embed"], iframe[src*="youtube-nocookie.com/embed"]');
-                    if (iframes.length > 0) {
-                        for (var i = 0; i < iframes.length; i++) {
-                            var src = iframes[i].src || '';
-                            var match = src.match(/embed\/([a-zA-Z0-9_-]{11})/);
-                            if (match && match[1]) {
-                                vid = match[1];
-                                iframes[i].style.display = 'none';
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!vid) {
-                        var btnOld = document.getElementById('car-play-yt-btn');
-                        if (btnOld) btnOld.remove();
-                        window.__lastAutoPlayedVid = null;
-                        return;
-                    }
-
-                    var titleEl = document.querySelector('h1, h2, .song-name, .header-title');
-                    var cleanTitle = (titleEl && titleEl.innerText) ? titleEl.innerText.trim() : document.title;
-                    cleanTitle = cleanTitle.replace(/-\s*台灣點歌王.*/g, '').trim();
-                    if (!cleanTitle) cleanTitle = '精選 MV';
-
-                    if (window.__lastAutoPlayedVid !== vid) {
-                        window.__lastAutoPlayedVid = vid;
-                        AndroidBridge.onSongSelected(cleanTitle, '', vid);
-                    }
-
-                    var btn = document.getElementById('car-play-yt-btn');
-                    if (!btn) {
-                        btn = document.createElement('button');
-                        btn.id = 'car-play-yt-btn';
-                        document.body.appendChild(btn);
-                    }
-                    btn.innerText = '▶ 重新點播：' + cleanTitle;
-                    btn.onclick = function() {
-                        AndroidBridge.onSongSelected(cleanTitle, '', vid);
-                    };
-                }
-
-                detectYouTubeAndHook();
-                if (!window.__carKtvWatcher) {
-                    window.__carKtvWatcher = setInterval(detectYouTubeAndHook, 800);
-                }
-            })();
-        """.trimIndent()
-        webView?.evaluateJavascript(js, null)
-    }
-
-    inner class WebAppInterface {
-        @JavascriptInterface
-        fun onSongSelected(title: String, artist: String, videoId: String) {
-            runOnUiThread {
-                val song = SongItem(
-                    title = title.ifBlank { "精選歌曲" },
-                    artist = artist,
-                    videoId = videoId.ifBlank { null }
-                )
-                promptAddSong(song)
-            }
-        }
     }
 
     private fun setupControls() {
@@ -265,64 +131,102 @@ class MainActivity : AppCompatActivity() {
             binding.tvAudioOnlyTitle.text = currentSong?.displayName() ?: "尚未播放歌曲"
         }
 
-        binding.tabCatalog.setOnClickListener {
-            binding.webView.visibility = View.VISIBLE
-            binding.rvQueue.visibility = View.GONE
-            binding.tabCatalog.setBackgroundColor(Color.parseColor("#FF6D00"))
-            binding.tabQueue.setBackgroundColor(Color.parseColor("#232833"))
-        }
+        // 分類分頁按鈕
+        binding.tabHot.setOnClickListener { selectCategoryTab(binding.tabHot, SongCategory.HOT) }
+        binding.tabTaiwanese.setOnClickListener { selectCategoryTab(binding.tabTaiwanese, SongCategory.TAIWANESE) }
+        binding.tabMandarin.setOnClickListener { selectCategoryTab(binding.tabMandarin, SongCategory.MANDARIN) }
+        binding.tabClassics.setOnClickListener { selectCategoryTab(binding.tabClassics, SongCategory.CLASSICS) }
 
         binding.tabQueue.setOnClickListener {
-            binding.webView.visibility = View.GONE
+            highlightTab(binding.tabQueue)
+            binding.rvCatalog.visibility = View.GONE
             binding.rvQueue.visibility = View.VISIBLE
-            binding.tabQueue.setBackgroundColor(Color.parseColor("#FF6D00"))
-            binding.tabCatalog.setBackgroundColor(Color.parseColor("#232833"))
+            binding.listLoadingOverlay.visibility = View.GONE
         }
 
-        val triggerQuickAdd = {
-            val query = binding.etQuickSearch.text.toString().trim()
+        // 原生搜歌
+        val doSearch = {
+            val query = binding.etSearch.text.toString().trim()
             if (query.isNotEmpty()) {
-                binding.etQuickSearch.setText("")
-                promptAddSong(SongItem(title = query))
+                hideKeyboard()
+                performNativeSearch(query)
             }
         }
-
-        binding.btnQuickAdd.setOnClickListener { triggerQuickAdd() }
-        binding.etQuickSearch.setOnEditorActionListener { _, actionId, _ ->
+        binding.btnSearch.setOnClickListener { doSearch() }
+        binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                triggerQuickAdd()
+                doSearch()
                 true
             } else false
         }
     }
 
-    private fun promptAddSong(song: SongItem) {
+    private fun highlightTab(activeTab: MaterialButton?) {
+        val allTabs = listOf(binding.tabHot, binding.tabTaiwanese, binding.tabMandarin, binding.tabClassics, binding.tabQueue)
+        for (tab in allTabs) {
+            tab.setBackgroundColor(
+                if (tab == activeTab) Color.parseColor("#FF6D00") else Color.parseColor("#232833")
+            )
+        }
+    }
+
+    private fun selectCategoryTab(tab: MaterialButton, category: SongCategory) {
+        highlightTab(tab)
+        binding.rvCatalog.visibility = View.VISIBLE
+        binding.rvQueue.visibility = View.GONE
+        binding.listLoadingOverlay.visibility = View.VISIBLE
+        binding.tvListLoadingMsg.text = "載入歌單中..."
+
+        lifecycleScope.launch {
+            val songs = CorpSongRepository.getSongs(category)
+            catalogAdapter.submitList(songs)
+            binding.rvCatalog.scrollToPosition(0)
+            binding.listLoadingOverlay.visibility = View.GONE
+        }
+    }
+
+    private fun performNativeSearch(query: String) {
+        highlightTab(null)
+        binding.rvCatalog.visibility = View.VISIBLE
+        binding.rvQueue.visibility = View.GONE
+        binding.listLoadingOverlay.visibility = View.VISIBLE
+        binding.tvListLoadingMsg.text = "搜尋「$query」中..."
+
+        lifecycleScope.launch {
+            try {
+                val results = YouTubeStreamResolver.searchSongItems(query)
+                if (results.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "找不到「$query」相關歌曲", Toast.LENGTH_SHORT).show()
+                } else {
+                    catalogAdapter.submitList(results)
+                    binding.rvCatalog.scrollToPosition(0)
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "搜尋失敗：${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                binding.listLoadingOverlay.visibility = View.GONE
+            }
+        }
+    }
+
+    /**
+     * 純粹點歌邏輯：
+     * - 沒在播歌：點一下直接送上方立刻播放
+     * - 正在播歌：點一下直接排入已點清單，無任何多餘彈窗或跳轉
+     */
+    private fun enqueueOrPlayDirectly(song: SongItem) {
         if (currentSong == null && !player.isPlaying) {
             playSong(song)
-            return
+        } else {
+            songQueue.add(song)
+            queueAdapter.notifyDataSetChanged()
+            updateQueueBadge()
+            Toast.makeText(
+                this,
+                "✅ 已點（第 ${songQueue.size} 首）：${song.title}",
+                Toast.LENGTH_SHORT
+            ).show()
         }
-
-        val options = arrayOf("加入已點清單 (排最後)", "優先插播 (下一首)", "立即切歌播放")
-        AlertDialog.Builder(this)
-            .setTitle("點歌：${song.displayName()}")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        songQueue.add(song)
-                        queueAdapter.notifyDataSetChanged()
-                        updateQueueBadge()
-                        Toast.makeText(this, "已加入清單：${song.title}", Toast.LENGTH_SHORT).show()
-                    }
-                    1 -> {
-                        songQueue.add(0, song)
-                        queueAdapter.notifyDataSetChanged()
-                        updateQueueBadge()
-                        Toast.makeText(this, "已優先插播：${song.title}", Toast.LENGTH_SHORT).show()
-                    }
-                    2 -> playSong(song)
-                }
-            }
-            .show()
     }
 
     private fun playNextInQueue() {
@@ -332,13 +236,16 @@ class MainActivity : AppCompatActivity() {
             updateQueueBadge()
             playSong(next)
         } else {
-            Toast.makeText(this, "已點清單已播完，請點選新歌", Toast.LENGTH_SHORT).show()
+            currentSong = null
+            player.stop()
+            binding.tvNowPlaying.text = "🎵 歌單已播完，請在下方點選新歌"
+            Toast.makeText(this, "已點清單已播完", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun playSong(song: SongItem) {
         currentSong = song
-        binding.tvNowPlaying.text = "🎵 解析中：${song.displayName()}"
+        binding.tvNowPlaying.text = "🎵 載入中：${song.displayName()}"
         binding.tvAudioOnlyTitle.text = song.displayName()
         binding.loadingIndicator.visibility = View.VISIBLE
 
@@ -348,7 +255,7 @@ class MainActivity : AppCompatActivity() {
                 startExoPlayer(resolved)
                 binding.tvNowPlaying.text = "🎵 正在播放：${song.displayName()}"
             } catch (e: Exception) {
-                binding.tvNowPlaying.text = "⚠️ 載入失敗：${song.title} (${e.javaClass.simpleName})"
+                binding.tvNowPlaying.text = "⚠️ 載入失敗：${song.title}（請按換版本）"
                 Toast.makeText(this@MainActivity, "無法載入 MV：${e.message}", Toast.LENGTH_LONG).show()
             } finally {
                 binding.loadingIndicator.visibility = View.GONE
@@ -357,14 +264,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun resolveWithFallback(song: SongItem): ResolvedStream {
-        // 優先嘗試原本攔截到的 videoId
+        // 1. 若有來自台灣點歌王的連結且尚未取得 videoId，先靜默取一次 videoId
+        if (song.videoId.isNullOrBlank() && !song.corpMvUrl.isNullOrBlank()) {
+            song.videoId = YouTubeStreamResolver.extractVideoIdFromCorpPage(song.corpMvUrl)
+        }
+
+        // 2. 有 videoId 直接解析播放
         if (!song.videoId.isNullOrBlank()) {
             try {
                 return YouTubeStreamResolver.resolveStream(song.videoId!!)
             } catch (_: Exception) {
-                // 若原影片下架或受限，自動退回用歌名搜尋備用官方 MV
+                // 若原影片下架或受限，自動退回用歌名+歌手搜尋官方 MV
             }
         }
+
+        // 3. 以歌名+歌手搜尋官方 MV
         if (song.candidateUrls.isEmpty()) {
             song.candidateUrls = YouTubeStreamResolver.searchCandidates(song.displayName())
             song.currentCandidateIndex = 0
@@ -433,18 +347,10 @@ class MainActivity : AppCompatActivity() {
         binding.tabQueue.text = "已點 (${songQueue.size})"
     }
 
-    private fun extractYouTubeId(url: String): String? {
-        val regex = Regex("(?:v=|youtu\\.be/|embed/)([a-zA-Z0-9_-]{11})")
-        return regex.find(url)?.groupValues?.getOrNull(1)
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        if (binding.webView.visibility == View.VISIBLE && binding.webView.canGoBack()) {
-            binding.webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(binding.etSearch.windowToken, 0)
+        binding.etSearch.clearFocus()
     }
 
     override fun onDestroy() {

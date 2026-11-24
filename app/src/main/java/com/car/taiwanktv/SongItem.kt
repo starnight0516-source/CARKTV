@@ -4,6 +4,7 @@ data class SongItem(
     val title: String,
     val artist: String = "",
     var videoId: String? = null,
+    val corpMvUrl: String? = null,
     var candidateUrls: List<String> = emptyList(),
     var currentCandidateIndex: Int = 0
 ) {
