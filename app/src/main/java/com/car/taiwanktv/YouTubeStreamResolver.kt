@@ -17,6 +17,7 @@ data class ResolvedStream(
     val audioUrl: String?,
     val muxedUrl: String?,
     val hlsUrl: String?,
+    val qualityLabel: String,
     val title: String
 )
 
@@ -68,7 +69,7 @@ object YouTubeStreamResolver {
     suspend fun searchSongItems(query: String, limit: Int = 30): List<SongItem> = withContext(Dispatchers.IO) {
         init()
         val yt = ServiceList.YouTube
-        val extractor = yt.getSearchExtractor("$query MV")
+        val extractor = yt.getSearchExtractor("$query 官方MV HD")
         extractor.fetchPage()
 
         extractor.initialPage.items
@@ -88,7 +89,7 @@ object YouTubeStreamResolver {
     suspend fun searchCandidates(query: String): List<String> = withContext(Dispatchers.IO) {
         init()
         val yt = ServiceList.YouTube
-        val searchQuery = "$query 官方MV"
+        val searchQuery = "$query 官方MV 1080p"
         val extractor = yt.getSearchExtractor(searchQuery)
         extractor.fetchPage()
 
@@ -99,6 +100,12 @@ object YouTubeStreamResolver {
             .map { it.url }
     }
 
+    /**
+     * 高畫質優先解析策略：
+     * 1. 優先選取 1080p (或最高不超過 1440p) 的 MP4 / WebM 分離影像流 + 最高位元率音訊流
+     * 2. 次選 HLS 串流（搭配 ExoPlayer 強制最高位元率）
+     * 3. 最後備援為最高畫質合併串流
+     */
     suspend fun resolveStream(videoUrlOrId: String): ResolvedStream = withContext(Dispatchers.IO) {
         init()
         val fullUrl = if (videoUrlOrId.startsWith("http")) {
@@ -109,29 +116,48 @@ object YouTubeStreamResolver {
 
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, fullUrl)
 
-        val bestVideo = streamInfo.videoOnlyStreams
-            .filter { it.isUrl && it.format?.suffix == "mp4" }
-            .sortedByDescending { it.height }
-            .firstOrNull { it.height <= 1080 }
-            ?: streamInfo.videoOnlyStreams.firstOrNull { it.isUrl }
+        val validVideoOnly = streamInfo.videoOnlyStreams
+            .filter { it.isUrl && it.height in 360..1440 }
 
-        val bestAudio = streamInfo.audioStreams
-            .filter { it.isUrl }
-            .sortedByDescending { it.averageBitrate }
-            .firstOrNull()
+        // 優先找 1080p MP4 -> 1080p 任意格式 -> 最高畫質 MP4 -> 最高畫質任意格式
+        val bestVideo = validVideoOnly
+            .filter { it.height == 1080 && it.format?.suffix == "mp4" }
+            .maxByOrNull { it.fps }
+            ?: validVideoOnly
+                .filter { it.height == 1080 }
+                .maxByOrNull { it.fps }
+            ?: validVideoOnly
+                .filter { it.format?.suffix == "mp4" }
+                .maxByOrNull { it.height }
+            ?: validVideoOnly
+                .maxByOrNull { it.height }
+
+        // 音訊優先選最高位元率 m4a/mp4，次選任意最高位元率音訊
+        val validAudio = streamInfo.audioStreams.filter { it.isUrl }
+        val bestAudio = validAudio
+            .filter { it.format?.suffix == "m4a" || it.format?.mimeType?.contains("mp4") == true }
+            .maxByOrNull { it.averageBitrate }
+            ?: validAudio.maxByOrNull { it.averageBitrate }
 
         val muxed = streamInfo.videoStreams
             .filter { it.isUrl }
-            .sortedByDescending { it.height }
-            .firstOrNull()
+            .maxByOrNull { it.height }
 
         val hls = streamInfo.hlsUrl?.takeIf { it.isNotBlank() }
+
+        val label = when {
+            bestVideo != null && bestAudio != null -> "${bestVideo.height}P HD"
+            hls != null -> "HLS HD"
+            muxed != null -> "${muxed.height}P"
+            else -> "HD"
+        }
 
         ResolvedStream(
             videoUrl = bestVideo?.content,
             audioUrl = bestAudio?.content,
             muxedUrl = muxed?.content,
             hlsUrl = hls,
+            qualityLabel = label,
             title = streamInfo.name ?: ""
         )
     }

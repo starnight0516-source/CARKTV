@@ -1,12 +1,18 @@
 package com.car.taiwanktv
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.AudioAttributes
@@ -18,6 +24,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.car.taiwanktv.databinding.ActivityMainBinding
@@ -29,8 +36,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var player: ExoPlayer
+    private lateinit var mediaSession: MediaSession
 
     private val songQueue = mutableListOf<SongItem>()
+    private val previousStack = mutableListOf<SongItem>()
     private val playedHistory = LinkedHashSet<String>()
     private var consecutiveFailures = 0
 
@@ -39,15 +48,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var queueAdapter: QueueAdapter
 
     private var currentSong: SongItem? = null
+    private var currentCategory: SongCategory = SongCategory.HOT
+    private var currentAutoPlayMode: AutoPlayMode = AutoPlayMode.MIXED
     private var isAudioOnly = false
     private var hasAutoStarted = false
+
+    companion object {
+        private const val PREFS_NAME = "taiwan_car_ktv_prefs"
+        private const val KEY_AUTO_PLAY_MODE = "auto_play_mode"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        loadUserSettings()
         setupPlayer()
+        setupMediaSession()
         setupLists()
         setupControls()
 
@@ -55,24 +73,192 @@ class MainActivity : AppCompatActivity() {
         selectCategoryTab(binding.tabHot, SongCategory.HOT, autoStartPlay = true)
     }
 
+    private fun loadUserSettings() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedMode = prefs.getString(KEY_AUTO_PLAY_MODE, AutoPlayMode.MIXED.name)
+        currentAutoPlayMode = try {
+            AutoPlayMode.valueOf(savedMode ?: AutoPlayMode.MIXED.name)
+        } catch (_: Exception) {
+            AutoPlayMode.MIXED
+        }
+        updateAutoPlayModeButton()
+    }
+
+    private fun saveAutoPlayMode(mode: AutoPlayMode) {
+        currentAutoPlayMode = mode
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_AUTO_PLAY_MODE, mode.name)
+            .apply()
+        updateAutoPlayModeButton()
+    }
+
+    private fun updateAutoPlayModeButton() {
+        binding.btnAutoPlayMode.text = currentAutoPlayMode.label
+        val bgColor = when (currentAutoPlayMode) {
+            AutoPlayMode.MIXED -> "#283593"
+            AutoPlayMode.MANDARIN -> "#00695C"
+            AutoPlayMode.TAIWANESE -> "#AD1457"
+        }
+        binding.btnAutoPlayMode.setBackgroundColor(Color.parseColor(bgColor))
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun setupPlayer() {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
+        // 強制高畫質軌道選擇器（優先最高位元率與 1080p/1440p 畫質）
+        val trackSelector = DefaultTrackSelector(this).apply {
+            parameters = buildUponParameters()
+                .setForceHighestSupportedBitrate(true)
+                .setMaxVideoSize(2560, 1440)
+                .build()
+        }
+
         player = ExoPlayer.Builder(this)
+            .setTrackSelector(trackSelector)
             .setAudioAttributes(audioAttributes, true)
             .build()
 
         binding.playerView.player = player
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                updateMediaSessionPlaybackState()
                 if (playbackState == Player.STATE_ENDED) {
                     playNextOrAutoContinue()
                 }
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updateMediaSessionPlaybackState()
+            }
         })
+    }
+
+    /**
+     * 註冊系統級 MediaSession：
+     * 讓車子方向盤的「上一首 / 下一首 / 播放暫停」按鍵可直接控制本 App，
+     * 並將目前歌名與歌手同步顯示在車機儀表與控制列。
+     */
+    private fun setupMediaSession() {
+        mediaSession = MediaSession(this, "TaiwanCarKTVSession").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() {
+                    runOnUiThread { player.play() }
+                }
+
+                override fun onPause() {
+                    runOnUiThread { player.pause() }
+                }
+
+                override fun onSkipToNext() {
+                    runOnUiThread { playNextOrAutoContinue() }
+                }
+
+                override fun onSkipToPrevious() {
+                    runOnUiThread { playPreviousSong() }
+                }
+
+                @Suppress("DEPRECATION")
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                    val keyEvent = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                        when (keyEvent.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                runOnUiThread { playNextOrAutoContinue() }
+                                return true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                runOnUiThread { playPreviousSong() }
+                                return true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                                runOnUiThread {
+                                    if (player.isPlaying) player.pause() else player.play()
+                                }
+                                return true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                                runOnUiThread { player.play() }
+                                return true
+                            }
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                runOnUiThread { player.pause() }
+                                return true
+                            }
+                        }
+                    }
+                    return super.onMediaButtonEvent(mediaButtonIntent)
+                }
+            })
+            isActive = true
+        }
+        updateMediaSessionPlaybackState()
+    }
+
+    private fun updateMediaSessionPlaybackState() {
+        if (!::mediaSession.isInitialized) return
+        val state = when {
+            player.isPlaying -> PlaybackState.STATE_PLAYING
+            player.playbackState == Player.STATE_BUFFERING -> PlaybackState.STATE_BUFFERING
+            player.playbackState == Player.STATE_READY -> PlaybackState.STATE_PAUSED
+            else -> PlaybackState.STATE_STOPPED
+        }
+        val actions = PlaybackState.ACTION_PLAY or
+            PlaybackState.ACTION_PAUSE or
+            PlaybackState.ACTION_PLAY_PAUSE or
+            PlaybackState.ACTION_SKIP_TO_NEXT or
+            PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+            PlaybackState.ACTION_STOP
+
+        val playbackState = PlaybackState.Builder()
+            .setActions(actions)
+            .setState(state, player.currentPosition, if (player.isPlaying) 1.0f else 0.0f)
+            .build()
+        mediaSession.setPlaybackState(playbackState)
+    }
+
+    private fun updateMediaSessionMetadata(song: SongItem) {
+        if (!::mediaSession.isInitialized) return
+        val metadata = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, song.title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, song.artist.ifBlank { "台灣車用點歌王" })
+            .build()
+        mediaSession.setMetadata(metadata)
+    }
+
+    /**
+     * 前景直接攔截方向盤媒體硬體按鍵（相容多數 CarPlay 安卓盒直接派發 KeyEvent）
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    playNextOrAutoContinue()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    playPreviousSong()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    if (player.isPlaying) player.pause() else player.play()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    player.play()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    player.pause()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun setupLists() {
@@ -96,7 +282,7 @@ class MainActivity : AppCompatActivity() {
                     val item = songQueue.removeAt(index)
                     queueAdapter.notifyDataSetChanged()
                     updateQueueBadge()
-                    playSong(item)
+                    playSong(item, pushCurrentToPrev = true)
                 }
             },
             onMoveTop = { index ->
@@ -121,6 +307,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupControls() {
+        binding.btnPrev.setOnClickListener { playPreviousSong() }
         binding.btnNext.setOnClickListener { playNextOrAutoContinue() }
 
         binding.btnReplay.setOnClickListener {
@@ -142,6 +329,16 @@ class MainActivity : AppCompatActivity() {
             binding.audioOnlyOverlay.visibility = if (isAudioOnly) View.VISIBLE else View.GONE
             binding.btnAudioOnly.text = if (isAudioOnly) "顯示MV" else "純聽歌"
             binding.tvAudioOnlyTitle.text = currentSong?.displayName() ?: "尚未播放歌曲"
+        }
+
+        // 公播模式選擇：純國語 / 純台語 / 混合
+        binding.btnAutoPlayMode.setOnClickListener {
+            showAutoPlayModeDialog()
+        }
+
+        // 歌單自動更新設定與立即同步
+        binding.btnUpdateCatalog.setOnClickListener {
+            showCatalogUpdateDialog()
         }
 
         // 主分類分頁
@@ -203,6 +400,75 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showAutoPlayModeDialog() {
+        val modes = arrayOf(AutoPlayMode.MIXED, AutoPlayMode.MANDARIN, AutoPlayMode.TAIWANESE)
+        val labels = arrayOf("混合連播（國語 + 台語全部金曲）", "純國語連播（只播國語熱門與經典）", "純台語連播（只播台語金曲與老歌）")
+        val checkedIndex = modes.indexOf(currentAutoPlayMode).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle("選擇自動公播語系")
+            .setSingleChoiceItems(labels, checkedIndex) { dialog, which ->
+                val selected = modes[which]
+                saveAutoPlayMode(selected)
+                Toast.makeText(this, "已切換為：${selected.label}", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showCatalogUpdateDialog() {
+        val isAuto = CorpSongRepository.isAutoUpdateEnabled(this)
+        val lastTime = CorpSongRepository.getLastUpdateTime(this)
+        val autoLabel = if (isAuto) "✅ 開啟 App 時自動更新最新歌單（目前：開啟）" else "⬜ 開啟 App 時自動更新最新歌單（目前：關閉）"
+        val options = arrayOf(
+            "🔄 立即同步最新排行榜歌單",
+            autoLabel
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("歌單自動更新設定（上次更新：$lastTime）")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> forceRefreshCatalog()
+                    1 -> {
+                        val nextState = !isAuto
+                        CorpSongRepository.setAutoUpdateEnabled(this, nextState)
+                        Toast.makeText(
+                            this,
+                            if (nextState) "已開啟「啟動自動更新最新歌單」" else "已關閉自動更新（改用本機快取）",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+            .setNegativeButton("關閉", null)
+            .show()
+    }
+
+    private fun forceRefreshCatalog() {
+        binding.listLoadingOverlay.visibility = View.VISIBLE
+        binding.tvListLoadingMsg.text = "正在同步台灣點歌王最新歌單..."
+
+        lifecycleScope.launch {
+            try {
+                val count = CorpSongRepository.refreshAllFromWeb(this@MainActivity)
+                val updatedList = CorpSongRepository.getSongs(this@MainActivity, currentCategory, allowNetwork = false)
+                catalogAdapter.submitList(updatedList)
+                binding.rvCatalog.scrollToPosition(0)
+                Toast.makeText(
+                    this@MainActivity,
+                    "✅ 歌單更新完成！同步了 $count 首最新榜單歌曲",
+                    Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "更新失敗：${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                binding.listLoadingOverlay.visibility = View.GONE
+            }
+        }
+    }
+
     private fun highlightMainTab(activeTab: MaterialButton?) {
         val allTabs = listOf(
             binding.tabHot,
@@ -221,6 +487,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectCategoryTab(tab: MaterialButton, category: SongCategory, autoStartPlay: Boolean = false) {
+        currentCategory = category
         highlightMainTab(tab)
         binding.wordCountBar.visibility = View.GONE
         binding.singerHeaderBar.visibility = View.GONE
@@ -231,7 +498,7 @@ class MainActivity : AppCompatActivity() {
         binding.tvListLoadingMsg.text = "載入歌單中..."
 
         lifecycleScope.launch {
-            val songs = CorpSongRepository.getSongs(category)
+            val songs = CorpSongRepository.getSongs(this@MainActivity, category)
             catalogAdapter.submitList(songs)
             binding.rvCatalog.scrollToPosition(0)
             binding.listLoadingOverlay.visibility = View.GONE
@@ -260,12 +527,10 @@ class MainActivity : AppCompatActivity() {
         binding.singerHeaderBar.visibility = View.VISIBLE
         binding.tvSelectedSinger.text = "🎤 ${singer.name} 精選歌單"
 
-        // 1. 先瞬間顯示本地大歌庫裡該歌星的歌曲
-        val localSongs = CorpSongRepository.filterBySingerLocal(singer.name)
+        val localSongs = CorpSongRepository.filterBySingerLocal(this, singer.name)
         catalogAdapter.submitList(localSongs)
         binding.rvCatalog.scrollToPosition(0)
 
-        // 2. 背景同步從 YouTube 擴充更多該歌星的熱門 MV
         lifecycleScope.launch {
             if (localSongs.isEmpty()) {
                 binding.listLoadingOverlay.visibility = View.VISIBLE
@@ -284,7 +549,6 @@ class MainActivity : AppCompatActivity() {
                     catalogAdapter.submitList(combined.values.toList())
                 }
             } catch (_: Exception) {
-                // 離線或限流時仍保有本地歌單
             } finally {
                 binding.listLoadingOverlay.visibility = View.GONE
             }
@@ -301,7 +565,7 @@ class MainActivity : AppCompatActivity() {
                 if (btn == activeBtn) Color.parseColor("#00B0FF") else Color.parseColor("#252B37")
             )
         }
-        val filtered = CorpSongRepository.filterByWordCount(wordCount)
+        val filtered = CorpSongRepository.filterByWordCount(this, wordCount)
         catalogAdapter.submitList(filtered)
         binding.rvCatalog.scrollToPosition(0)
         val label = when {
@@ -339,12 +603,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 一般點歌（排到已點清單最後；若沒在播則直接開播）
-     */
     private fun enqueueOrPlayDirectly(song: SongItem) {
         if (currentSong == null && !player.isPlaying) {
-            playSong(song)
+            playSong(song, pushCurrentToPrev = false)
         } else {
             songQueue.add(song)
             queueAdapter.notifyDataSetChanged()
@@ -357,12 +618,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 優先插播（直接排到已點清單第 1 位，這首播完馬上播它；若沒在播則直接開播）
-     */
     private fun cutInSongDirectly(song: SongItem) {
         if (currentSong == null && !player.isPlaying) {
-            playSong(song)
+            playSong(song, pushCurrentToPrev = false)
         } else {
             songQueue.add(0, song)
             queueAdapter.notifyDataSetChanged()
@@ -376,20 +634,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 連續播放核心：
-     * 1. 若「已點歌單」有歌 → 播下一首已點歌曲
-     * 2. 若「已點歌單」播完 → 自動從完整大歌庫隨機挑一首未重複歌曲無縫連播（公播模式）
+     * 上一首：
+     * 支援 UI「上一首」按鍵與方向盤「上一首」按鍵
+     */
+    private fun playPreviousSong() {
+        if (previousStack.isNotEmpty()) {
+            val prevSong = previousStack.removeAt(previousStack.lastIndex)
+            // 把目前正在播的歌放回待播清單最前面，方便再按「下一首」切回來
+            currentSong?.let { curr ->
+                songQueue.add(0, curr.copy())
+                queueAdapter.notifyDataSetChanged()
+                updateQueueBadge()
+            }
+            playSong(prevSong, isAutoPlay = false, pushCurrentToPrev = false)
+        } else {
+            // 若沒有更早的歌，則直接重頭播放當前歌曲
+            player.seekTo(0)
+            player.play()
+            Toast.makeText(this, "已回到第一首，重新播放", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * 下一首 / 自動公播連播（依據所選的 純國語 / 純台語 / 混合 模式挑選）
      */
     private fun playNextOrAutoContinue() {
         if (songQueue.isNotEmpty()) {
             val next = songQueue.removeAt(0)
             queueAdapter.notifyDataSetChanged()
             updateQueueBadge()
-            playSong(next, isAutoPlay = false)
+            playSong(next, isAutoPlay = false, pushCurrentToPrev = true)
             return
         }
 
-        val pool = CorpSongRepository.getAllBuiltInAndCachedSongs()
+        val pool = CorpSongRepository.getAutoPlayPool(this, currentAutoPlayMode)
         if (pool.isEmpty()) return
 
         var unplayed = pool.filter { !playedHistory.contains(it.title) }
@@ -399,15 +677,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         val randomNext = unplayed.random().copy()
-        playSong(randomNext, isAutoPlay = true)
+        playSong(randomNext, isAutoPlay = true, pushCurrentToPrev = true)
     }
 
-    private fun playSong(song: SongItem, isAutoPlay: Boolean = false) {
+    private fun playSong(song: SongItem, isAutoPlay: Boolean = false, pushCurrentToPrev: Boolean = true) {
+        if (pushCurrentToPrev) {
+            currentSong?.let { prev ->
+                if (previousStack.lastOrNull()?.title != prev.title) {
+                    previousStack.add(prev.copy())
+                    if (previousStack.size > 30) {
+                        previousStack.removeAt(0)
+                    }
+                }
+            }
+        }
+
         currentSong = song
         playedHistory.add(song.title)
-        val prefix = if (isAutoPlay) "📻 自動連播" else "🎵 正在播放"
-        binding.tvNowPlaying.text = "⏳ 載入中：${song.displayName()}"
+        updateMediaSessionMetadata(song)
+
+        val prefix = if (isAutoPlay) "📻 ${currentAutoPlayMode.label}" else "🎵 正在播放"
+        binding.tvNowPlaying.text = "⏳ 高畫質載入中：${song.displayName()}"
         binding.tvAudioOnlyTitle.text = song.displayName()
+        binding.tvQualityBadge.visibility = View.GONE
         binding.loadingIndicator.visibility = View.VISIBLE
 
         lifecycleScope.launch {
@@ -416,12 +708,13 @@ class MainActivity : AppCompatActivity() {
                 startExoPlayer(resolved)
                 consecutiveFailures = 0
                 binding.tvNowPlaying.text = "$prefix：${song.displayName()}"
+                binding.tvQualityBadge.text = resolved.qualityLabel
+                binding.tvQualityBadge.visibility = View.VISIBLE
             } catch (e: Exception) {
                 consecutiveFailures++
                 binding.tvNowPlaying.text = "⚠️ 載入失敗：${song.title}"
                 Toast.makeText(this@MainActivity, "跳過無法載入的歌曲：${song.title}", Toast.LENGTH_SHORT).show()
 
-                // 若為自動連播或連續失敗小於 3 次，自動跳下一首避免車上冷場
                 if (consecutiveFailures < 3) {
                     delay(1500)
                     playNextOrAutoContinue()
@@ -470,7 +763,9 @@ class MainActivity : AppCompatActivity() {
                     startExoPlayer(resolved)
                     consecutiveFailures = 0
                     binding.tvNowPlaying.text = "🎵 正在播放：${song.displayName()}"
-                    Toast.makeText(this@MainActivity, "已切換至第 ${song.currentCandidateIndex + 1} 個版本", Toast.LENGTH_SHORT).show()
+                    binding.tvQualityBadge.text = resolved.qualityLabel
+                    binding.tvQualityBadge.visibility = View.VISIBLE
+                    Toast.makeText(this@MainActivity, "已切換至第 ${song.currentCandidateIndex + 1} 個版本 (${resolved.qualityLabel})", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "切換版本失敗：${e.message}", Toast.LENGTH_SHORT).show()
@@ -494,19 +789,20 @@ class MainActivity : AppCompatActivity() {
                 val mergedSource = MergingMediaSource(videoSource, audioSource)
                 player.setMediaSource(mergedSource)
             }
-            resolved.muxedUrl != null -> {
-                player.setMediaItem(MediaItem.fromUri(resolved.muxedUrl))
-            }
             resolved.hlsUrl != null -> {
                 val hlsSource = HlsMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(resolved.hlsUrl))
                 player.setMediaSource(hlsSource)
+            }
+            resolved.muxedUrl != null -> {
+                player.setMediaItem(MediaItem.fromUri(resolved.muxedUrl))
             }
             else -> throw Exception("沒有可用的影音串流")
         }
 
         player.prepare()
         player.play()
+        updateMediaSessionPlaybackState()
     }
 
     private fun updateQueueBadge() {
@@ -521,6 +817,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (::mediaSession.isInitialized) {
+            mediaSession.isActive = false
+            mediaSession.release()
+        }
         player.release()
     }
 }

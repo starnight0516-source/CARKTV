@@ -6,7 +6,7 @@
     android:background="#0F1115"
     android:orientation="vertical">
 
-    <!-- 上半部：MV 播放區 (固定 16:9 比例) -->
+    <!-- 上半部：高畫質 MV 播放區 (固定 16:9 比例) -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/playerContainer"
         android:layout_width="match_parent"
@@ -23,6 +23,23 @@
             app:layout_constraintTop_toTopOf="parent"
             app:resize_mode="fit"
             app:use_controller="true" />
+
+        <!-- 右上角畫質標籤 (例如 1080P HD) -->
+        <TextView
+            android:id="@+id/tvQualityBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="10dp"
+            android:background="#99000000"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="3dp"
+            android:text="HD"
+            android:textColor="#00E676"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="@id/playerView"
+            app:layout_constraintTop_toTopOf="@id/playerView" />
 
         <!-- 純聽歌遮罩 (夜間護眼模式) -->
         <LinearLayout
@@ -73,7 +90,7 @@
             app:layout_constraintTop_toTopOf="@id/playerView" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <!-- 播放資訊與快捷大按鈕列 -->
+    <!-- 播放資訊與控制列 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -82,17 +99,57 @@
         android:orientation="vertical"
         android:padding="10dp">
 
-        <TextView
-            android:id="@+id/tvNowPlaying"
+        <!-- 歌名顯示列 + 公播模式 + 更新歌單 -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="marquee"
-            android:singleLine="true"
-            android:text="🎵 啟動中，即將自動連續播放..."
-            android:textColor="#FFFFFF"
-            android:textSize="17sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
+            <TextView
+                android:id="@+id/tvNowPlaying"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="marquee"
+                android:singleLine="true"
+                android:text="🎵 啟動中，即將自動連續播放..."
+                android:textColor="#FFFFFF"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAutoPlayMode"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="#283593"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="10dp"
+                android:text="公播:混合"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnUpdateCatalog"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="#1B5E20"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="10dp"
+                android:text="更新歌單"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 方向盤連動大按鈕控制列：上一首 / 下一首 / 重唱 / 換版本 / 純聽歌 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -100,48 +157,65 @@
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPrev"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#37474F"
+                android:paddingHorizontal="4dp"
+                android:text="⏮ 上一首"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnNext"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_marginEnd="6dp"
+                android:layout_marginEnd="5dp"
                 android:layout_weight="1"
                 android:backgroundTint="#FF6D00"
-                android:text="切歌"
+                android:paddingHorizontal="4dp"
+                android:text="下一首 ⏭"
                 android:textColor="#FFFFFF"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnReplay"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
+                android:layout_marginEnd="5dp"
+                android:layout_weight="0.85"
                 android:backgroundTint="#232833"
+                android:paddingHorizontal="4dp"
                 android:text="重唱"
                 android:textColor="#FFFFFF"
-                android:textSize="15sp" />
+                android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSwitchSource"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1.2"
+                android:layout_marginEnd="5dp"
+                android:layout_weight="0.95"
                 android:backgroundTint="#232833"
+                android:paddingHorizontal="4dp"
                 android:text="換版本"
                 android:textColor="#40E0FF"
-                android:textSize="15sp" />
+                android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAudioOnly"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_weight="1.2"
+                android:layout_weight="0.95"
                 android:backgroundTint="#232833"
+                android:paddingHorizontal="4dp"
                 android:text="純聽歌"
                 android:textColor="#FFD54F"
-                android:textSize="15sp" />
+                android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -272,7 +346,7 @@
         </LinearLayout>
     </HorizontalScrollView>
 
-    <!-- 字數分類次選單（點選「字數分類」時顯示） -->
+    <!-- 字數分類次選單 -->
     <HorizontalScrollView
         android:id="@+id/wordCountBar"
         android:layout_width="match_parent"
@@ -359,7 +433,7 @@
         </LinearLayout>
     </HorizontalScrollView>
 
-    <!-- 歌星詳情返回列（點進某位歌星時顯示） -->
+    <!-- 歌星詳情返回列 -->
     <LinearLayout
         android:id="@+id/singerHeaderBar"
         android:layout_width="match_parent"

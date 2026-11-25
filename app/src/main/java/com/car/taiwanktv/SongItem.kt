@@ -1,10 +1,17 @@
 package com.car.taiwanktv
 
+enum class AutoPlayMode(val label: String) {
+    MIXED("公播:混合"),
+    MANDARIN("公播:純國語"),
+    TAIWANESE("公播:純台語")
+}
+
 data class SongItem(
     val title: String,
     val artist: String = "",
     var videoId: String? = null,
     val corpMvUrl: String? = null,
+    val lang: String = "MIX", // "ZH" = 國語, "TW" = 台語, "MIX" = 混合/未指定
     var candidateUrls: List<String> = emptyList(),
     var currentCandidateIndex: Int = 0
 ) {
