@@ -11,8 +11,8 @@ android {
         applicationId = "com.car.taiwanktv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "2.2.0"
+        versionCode = 8
+        versionName = "2.4.0"
         multiDexEnabled = true
     }
 
@@ -59,4 +59,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.18.1")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0")
+
+    // Embedded Web Server & Offline QR Code Generator for Phone Remote Ordering
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("com.google.zxing:core:3.5.3")
 }

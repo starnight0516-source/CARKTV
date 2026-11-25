@@ -11,6 +11,10 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.view.Gravity
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -51,6 +55,9 @@ class MainActivity : AppCompatActivity() {
     private var currentCategory: SongCategory = SongCategory.HOT
     private var currentAutoPlayMode: AutoPlayMode = AutoPlayMode.MIXED
     private var isAudioOnly = false
+    private var isFullscreen = false
+    private var remoteServer: RemoteControlServer? = null
+    private val serverPort = 8899
     private var hasAutoStarted = false
 
     companion object {
@@ -68,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         setupMediaSession()
         setupLists()
         setupControls()
+        startRemoteServer()
 
         // 啟動後載入「新歌排行」並自動開始連續播放
         selectCategoryTab(binding.tabHot, SongCategory.HOT, autoStartPlay = true)
@@ -256,6 +264,28 @@ class MainActivity : AppCompatActivity() {
                     player.pause()
                     return true
                 }
+                KeyEvent.KEYCODE_CHANNEL_UP -> {
+                    playNextOrAutoContinue()
+                    return true
+                }
+                KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                    playPreviousSong()
+                    return true
+                }
+                KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO -> {
+                    toggleFullscreen()
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if (isFullscreen) {
+                        toggleFullscreen()
+                        return true
+                    }
+                    if (binding.singerHeaderBar.visibility == View.VISIBLE) {
+                        showSingerWall()
+                        return true
+                    }
+                }
             }
         }
         return super.dispatchKeyEvent(event)
@@ -306,7 +336,8 @@ class MainActivity : AppCompatActivity() {
         binding.rvQueue.adapter = queueAdapter
     }
 
-    private fun setupControls() {
+    private fun setupControls()
+        startRemoteServer() {
         binding.btnPrev.setOnClickListener { playPreviousSong() }
         binding.btnNext.setOnClickListener { playNextOrAutoContinue() }
 
@@ -329,6 +360,15 @@ class MainActivity : AppCompatActivity() {
             binding.audioOnlyOverlay.visibility = if (isAudioOnly) View.VISIBLE else View.GONE
             binding.btnAudioOnly.text = if (isAudioOnly) "顯示MV" else "純聽歌"
             binding.tvAudioOnlyTitle.text = currentSong?.displayName() ?: "尚未播放歌曲"
+        }
+
+        binding.btnFullscreen.setOnClickListener {
+            toggleFullscreen()
+        }
+
+        // 手機掃 QR Code 遠端點歌
+        binding.btnQrCode.setOnClickListener {
+            showQrCodeDialog()
         }
 
         // 公播模式選擇：純國語 / 純台語 / 混合
@@ -809,6 +849,150 @@ class MainActivity : AppCompatActivity() {
         binding.tabQueue.text = "已點 (${songQueue.size})"
     }
 
+    private fun startRemoteServer() {
+        try {
+            remoteServer?.stop()
+            remoteServer = RemoteControlServer(
+                context = this,
+                callback = object : RemoteKtvCallback {
+                    override fun getNowPlayingText(): String {
+                        return binding.tvNowPlaying.text?.toString() ?: "尚未播放"
+                    }
+
+                    override fun isCurrentlyPlaying(): Boolean {
+                        return player.isPlaying
+                    }
+
+                    override fun getQueueSnapshot(): List<SongItem> {
+                        return synchronized(songQueue) { songQueue.toList() }
+                    }
+
+                    override fun onRemoteOrderSong(song: SongItem, cutIn: Boolean) {
+                        runOnUiThread {
+                            if (cutIn) {
+                                cutInSongDirectly(song)
+                            } else {
+                                enqueueOrPlayDirectly(song)
+                            }
+                        }
+                    }
+
+                    override fun onRemoteControl(action: String) {
+                        runOnUiThread {
+                            when (action) {
+                                "next" -> playNextOrAutoContinue()
+                                "prev" -> playPreviousSong()
+                                "replay" -> {
+                                    player.seekTo(0)
+                                    player.play()
+                                }
+                                "toggle" -> {
+                                    if (player.isPlaying) player.pause() else player.play()
+                                }
+                            }
+                        }
+                    }
+
+                    override fun onRemoteQueueAction(action: String, index: Int) {
+                        runOnUiThread {
+                            if (index !in songQueue.indices) return@runOnUiThread
+                            when (action) {
+                                "play" -> {
+                                    val item = songQueue.removeAt(index)
+                                    queueAdapter.notifyDataSetChanged()
+                                    updateQueueBadge()
+                                    playSong(item, pushCurrentToPrev = true)
+                                }
+                                "top" -> {
+                                    if (index > 0) {
+                                        val item = songQueue.removeAt(index)
+                                        songQueue.add(0, item)
+                                        queueAdapter.notifyDataSetChanged()
+                                    }
+                                }
+                                "remove" -> {
+                                    songQueue.removeAt(index)
+                                    queueAdapter.notifyDataSetChanged()
+                                    updateQueueBadge()
+                                }
+                            }
+                        }
+                    }
+                },
+                port = serverPort
+            )
+            remoteServer?.start()
+        } catch (e: Exception) {
+            Toast.makeText(this, "遠端點歌服務啟動失敗：${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showQrCodeDialog() {
+        val ip = QrCodeHelper.getLocalIpAddress()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(40, 32, 40, 20)
+            setBackgroundColor(Color.parseColor("#161922"))
+        }
+
+        if (ip == null) {
+            val tvErr = TextView(this).apply {
+                text = "⚠️ 偵測不到區域網路 IP\n\n請確認車機或電視已連上 Wi-Fi 或手機熱點，再按「重新偵測」。"
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                gravity = Gravity.CENTER
+            }
+            container.addView(tvErr)
+        } else {
+            val url = "http://$ip:$serverPort"
+            val qrBitmap = QrCodeHelper.generateQrBitmap(url, 520)
+
+            val ivQr = ImageView(this).apply {
+                setImageBitmap(qrBitmap)
+                layoutParams = LinearLayout.LayoutParams(520, 520)
+            }
+            val tvUrl = TextView(this).apply {
+                text = url
+                setTextColor(Color.parseColor("#40E0FF"))
+                textSize = 20f
+                gravity = Gravity.CENTER
+                setPadding(0, 20, 0, 8)
+            }
+            val tvHint = TextView(this).apply {
+                text = "手機連上同一個 Wi-Fi 或熱點，掃碼即可點歌、插播與切歌（免裝 App）"
+                setTextColor(Color.parseColor("#CFD8DC"))
+                textSize = 14f
+                gravity = Gravity.CENTER
+            }
+            container.addView(ivQr)
+            container.addView(tvUrl)
+            container.addView(tvHint)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("📱 手機掃碼遠端點歌")
+            .setView(container)
+            .setPositiveButton("關閉", null)
+            .setNeutralButton("重新偵測 IP") { _, _ ->
+                startRemoteServer()
+                showQrCodeDialog()
+            }
+            .show()
+    }
+
+    private fun toggleFullscreen() {
+        isFullscreen = !isFullscreen
+        if (isFullscreen) {
+            binding.catalogPanel.visibility = View.GONE
+            binding.controlPanel.visibility = View.GONE
+            Toast.makeText(this, "已進入全螢幕（按返回鍵或選單鍵退出）", Toast.LENGTH_SHORT).show()
+        } else {
+            binding.catalogPanel.visibility = View.VISIBLE
+            binding.controlPanel.visibility = View.VISIBLE
+        }
+    }
+
     private fun hideKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(binding.etSearch.windowToken, 0)
@@ -821,6 +1005,7 @@ class MainActivity : AppCompatActivity() {
             mediaSession.isActive = false
             mediaSession.release()
         }
+        remoteServer?.stop()
         player.release()
     }
 }
