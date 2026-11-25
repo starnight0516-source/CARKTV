@@ -3,7 +3,10 @@ package com.car.taiwanktv
 enum class AutoPlayMode(val label: String) {
     MIXED("公播:混合"),
     MANDARIN("公播:純國語"),
-    TAIWANESE("公播:純台語")
+    TAIWANESE("公播:純台語"),
+    KKBOX_ALL("公播:KK綜合"),
+    KKBOX_ZH("公播:KK華語"),
+    KKBOX_TW("公播:KK台語")
 }
 
 data class SongItem(

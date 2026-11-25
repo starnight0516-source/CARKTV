@@ -58,6 +58,8 @@ class MainActivity : AppCompatActivity() {
     private var currentResolvedStream: ResolvedStream? = null
     private var currentPlaybackTier: Int = 0
     private var currentCategory: SongCategory = SongCategory.HOT
+    private var isKkboxTaiwaneseMode = false
+    private var activeKkboxChart: KkboxChartType? = null
     private var currentAutoPlayMode: AutoPlayMode = AutoPlayMode.MIXED
     private var isAudioOnly = false
     private var isFullscreen = false
@@ -112,6 +114,9 @@ class MainActivity : AppCompatActivity() {
             AutoPlayMode.MIXED -> "#283593"
             AutoPlayMode.MANDARIN -> "#00695C"
             AutoPlayMode.TAIWANESE -> "#AD1457"
+            AutoPlayMode.KKBOX_ALL -> "#0277BD"
+            AutoPlayMode.KKBOX_ZH -> "#00838F"
+            AutoPlayMode.KKBOX_TW -> "#C2185B"
         }
         binding.btnAutoPlayMode.setBackgroundColor(Color.parseColor(bgColor))
     }
@@ -407,6 +412,17 @@ class MainActivity : AppCompatActivity() {
 
         // 主分類分頁
         binding.tabHot.setOnClickListener { selectCategoryTab(binding.tabHot, SongCategory.HOT) }
+        binding.tabKkZh.setOnClickListener { openKkboxTab(isTaiwanese = false) }
+        binding.tabKkTw.setOnClickListener { openKkboxTab(isTaiwanese = true) }
+
+        binding.btnKkSongDaily.setOnClickListener {
+            val type = if (isKkboxTaiwaneseMode) KkboxChartType.TW_SONG else KkboxChartType.ZH_SONG
+            loadKkboxChart(type, isSongDaily = true)
+        }
+        binding.btnKkNewDaily.setOnClickListener {
+            val type = if (isKkboxTaiwaneseMode) KkboxChartType.TW_NEW else KkboxChartType.ZH_NEW
+            loadKkboxChart(type, isSongDaily = false)
+        }
         binding.tabTaiwanese.setOnClickListener { selectCategoryTab(binding.tabTaiwanese, SongCategory.TAIWANESE) }
         binding.tabMandarin.setOnClickListener { selectCategoryTab(binding.tabMandarin, SongCategory.MANDARIN) }
         binding.tabClassics.setOnClickListener { selectCategoryTab(binding.tabClassics, SongCategory.CLASSICS) }
@@ -420,6 +436,7 @@ class MainActivity : AppCompatActivity() {
             highlightMainTab(binding.tabWordCount)
             binding.wordCountBar.visibility = View.VISIBLE
             binding.singerHeaderBar.visibility = View.GONE
+        binding.kkboxSubBar.visibility = View.GONE
             binding.rvCatalog.visibility = View.VISIBLE
             binding.rvSingers.visibility = View.GONE
             binding.rvQueue.visibility = View.GONE
@@ -441,6 +458,7 @@ class MainActivity : AppCompatActivity() {
             highlightMainTab(binding.tabQueue)
             binding.wordCountBar.visibility = View.GONE
             binding.singerHeaderBar.visibility = View.GONE
+        binding.kkboxSubBar.visibility = View.GONE
             binding.rvCatalog.visibility = View.GONE
             binding.rvSingers.visibility = View.GONE
             binding.rvQueue.visibility = View.VISIBLE
@@ -465,16 +483,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAutoPlayModeDialog() {
-        val modes = arrayOf(AutoPlayMode.MIXED, AutoPlayMode.MANDARIN, AutoPlayMode.TAIWANESE)
-        val labels = arrayOf("混合連播（國語 + 台語全部金曲）", "純國語連播（只播國語熱門與經典）", "純台語連播（只播台語金曲與老歌）")
+        val modes = arrayOf(
+            AutoPlayMode.MIXED,
+            AutoPlayMode.MANDARIN,
+            AutoPlayMode.TAIWANESE,
+            AutoPlayMode.KKBOX_ALL,
+            AutoPlayMode.KKBOX_ZH,
+            AutoPlayMode.KKBOX_TW
+        )
+        val labels = arrayOf(
+            "混合連播（全部國語 + 台語金曲）",
+            "純國語連播（點歌王 + KKBOX 國語）",
+            "純台語連播（點歌王 + KKBOX 台語）",
+            "KKBOX 綜合日榜（華語 + 台語最新榜單）",
+            "KKBOX 純華語日榜（華語單曲 + 新歌）",
+            "KKBOX 純台語日榜（台語單曲 + 新歌）"
+        )
         val checkedIndex = modes.indexOf(currentAutoPlayMode).coerceAtLeast(0)
 
         AlertDialog.Builder(this)
-            .setTitle("選擇自動公播語系")
+            .setTitle("選擇自動公播類別")
             .setSingleChoiceItems(labels, checkedIndex) { dialog, which ->
                 val selected = modes[which]
                 saveAutoPlayMode(selected)
-                Toast.makeText(this, "已切換為：${selected.label}", Toast.LENGTH_SHORT).show()
+                // 若切換至 KKBOX 公播模式，背景確保已拉取最新日榜
+                if (selected == AutoPlayMode.KKBOX_ALL || selected == AutoPlayMode.KKBOX_ZH || selected == AutoPlayMode.KKBOX_TW) {
+                    lifecycleScope.launch {
+                        when (selected) {
+                            AutoPlayMode.KKBOX_ALL -> KkboxChartRepository.refreshAllCharts(this@MainActivity)
+                            AutoPlayMode.KKBOX_ZH -> {
+                                KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.ZH_SONG)
+                                KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.ZH_NEW)
+                            }
+                            AutoPlayMode.KKBOX_TW -> {
+                                KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.TW_SONG)
+                                KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.TW_NEW)
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+                Toast.makeText(this, "已切換為：${selected.label}（下一首生效）", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
             .setNegativeButton("取消", null)
@@ -512,17 +561,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun forceRefreshCatalog() {
         binding.listLoadingOverlay.visibility = View.VISIBLE
-        binding.tvListLoadingMsg.text = "正在同步台灣點歌王最新歌單..."
+        binding.tvListLoadingMsg.text = "正在同步 KKBOX 日榜與台灣點歌王最新歌單..."
 
         lifecycleScope.launch {
             try {
-                val count = CorpSongRepository.refreshAllFromWeb(this@MainActivity)
-                val updatedList = CorpSongRepository.getSongs(this@MainActivity, currentCategory, allowNetwork = false)
+                val corpCount = CorpSongRepository.refreshAllFromWeb(this@MainActivity)
+                val kkCount = KkboxChartRepository.refreshAllCharts(this@MainActivity)
+                val updatedList = if (activeKkboxChart != null) {
+                    KkboxChartRepository.getChart(this@MainActivity, activeKkboxChart!!, forceRefresh = false)
+                } else {
+                    CorpSongRepository.getSongs(this@MainActivity, currentCategory, allowNetwork = false)
+                }
                 catalogAdapter.submitList(updatedList)
                 binding.rvCatalog.scrollToPosition(0)
                 Toast.makeText(
                     this@MainActivity,
-                    "✅ 歌單更新完成！同步了 $count 首最新榜單歌曲",
+                    "✅ 更新完成！KKBOX $kkCount 首 + 點歌王 $corpCount 首",
                     Toast.LENGTH_LONG
                 ).show()
             } catch (e: Exception) {
@@ -533,9 +587,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openKkboxTab(isTaiwanese: Boolean) {
+        isKkboxTaiwaneseMode = isTaiwanese
+        highlightMainTab(if (isTaiwanese) binding.tabKkTw else binding.tabKkZh)
+        binding.wordCountBar.visibility = View.GONE
+        binding.singerHeaderBar.visibility = View.GONE
+        binding.kkboxSubBar.visibility = View.VISIBLE
+        binding.rvCatalog.visibility = View.VISIBLE
+        binding.rvSingers.visibility = View.GONE
+        binding.rvQueue.visibility = View.GONE
+
+        val defaultType = if (isTaiwanese) KkboxChartType.TW_SONG else KkboxChartType.ZH_SONG
+        loadKkboxChart(defaultType, isSongDaily = true)
+    }
+
+    private fun loadKkboxChart(type: KkboxChartType, isSongDaily: Boolean) {
+        activeKkboxChart = type
+        binding.btnKkSongDaily.setBackgroundColor(
+            Color.parseColor(if (isSongDaily) "#00B0FF" else "#252B37")
+        )
+        binding.btnKkNewDaily.setBackgroundColor(
+            Color.parseColor(if (!isSongDaily) "#00B0FF" else "#252B37")
+        )
+        binding.listLoadingOverlay.visibility = View.VISIBLE
+        binding.tvListLoadingMsg.text = "載入 ${type.label} 中..."
+
+        lifecycleScope.launch {
+            val songs = KkboxChartRepository.getChart(this@MainActivity, type)
+            catalogAdapter.submitList(songs)
+            binding.rvCatalog.scrollToPosition(0)
+            binding.listLoadingOverlay.visibility = View.GONE
+        }
+    }
+
     private fun highlightMainTab(activeTab: MaterialButton?) {
         val allTabs = listOf(
             binding.tabHot,
+            binding.tabKkZh,
+            binding.tabKkTw,
             binding.tabTaiwanese,
             binding.tabMandarin,
             binding.tabClassics,
@@ -552,9 +641,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectCategoryTab(tab: MaterialButton, category: SongCategory, autoStartPlay: Boolean = false) {
         currentCategory = category
+        activeKkboxChart = null
         highlightMainTab(tab)
         binding.wordCountBar.visibility = View.GONE
         binding.singerHeaderBar.visibility = View.GONE
+        binding.kkboxSubBar.visibility = View.GONE
         binding.rvCatalog.visibility = View.VISIBLE
         binding.rvSingers.visibility = View.GONE
         binding.rvQueue.visibility = View.GONE
@@ -570,6 +661,14 @@ class MainActivity : AppCompatActivity() {
             // 一打開 App 自動開播並連續播放
             if (autoStartPlay && !hasAutoStarted && currentSong == null) {
                 hasAutoStarted = true
+                if (currentAutoPlayMode == AutoPlayMode.KKBOX_ZH || currentAutoPlayMode == AutoPlayMode.KKBOX_ALL) {
+                    KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.ZH_SONG)
+                    KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.ZH_NEW)
+                }
+                if (currentAutoPlayMode == AutoPlayMode.KKBOX_TW || currentAutoPlayMode == AutoPlayMode.KKBOX_ALL) {
+                    KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.TW_SONG)
+                    KkboxChartRepository.getChart(this@MainActivity, KkboxChartType.TW_NEW)
+                }
                 playNextOrAutoContinue()
             }
         }
@@ -579,6 +678,7 @@ class MainActivity : AppCompatActivity() {
         highlightMainTab(binding.tabSingers)
         binding.wordCountBar.visibility = View.GONE
         binding.singerHeaderBar.visibility = View.GONE
+        binding.kkboxSubBar.visibility = View.GONE
         binding.rvCatalog.visibility = View.GONE
         binding.rvQueue.visibility = View.GONE
         binding.rvSingers.visibility = View.VISIBLE
@@ -644,6 +744,7 @@ class MainActivity : AppCompatActivity() {
         highlightMainTab(null)
         binding.wordCountBar.visibility = View.GONE
         binding.singerHeaderBar.visibility = View.GONE
+        binding.kkboxSubBar.visibility = View.GONE
         binding.rvCatalog.visibility = View.VISIBLE
         binding.rvSingers.visibility = View.GONE
         binding.rvQueue.visibility = View.GONE

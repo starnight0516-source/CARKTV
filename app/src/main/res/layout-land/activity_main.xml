@@ -331,6 +331,30 @@
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tabKkZh"
+                    android:layout_width="wrap_content"
+                    android:layout_height="46dp"
+                    android:layout_marginEnd="6dp"
+                    android:backgroundTint="#232833"
+                    android:focusable="true"
+                    android:text="KK華語榜"
+                    android:textColor="#00E5FF"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/tabKkTw"
+                    android:layout_width="wrap_content"
+                    android:layout_height="46dp"
+                    android:layout_marginEnd="6dp"
+                    android:backgroundTint="#232833"
+                    android:focusable="true"
+                    android:text="KK台語榜"
+                    android:textColor="#FF80AB"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/tabTaiwanese"
                     android:layout_width="wrap_content"
                     android:layout_height="46dp"
@@ -399,6 +423,43 @@
                     android:textStyle="bold" />
             </LinearLayout>
         </HorizontalScrollView>
+
+        <LinearLayout
+            android:id="@+id/kkboxSubBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#151922"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="6dp"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnKkSongDaily"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:backgroundTint="#00B0FF"
+                android:focusable="true"
+                android:text="🔥 單曲日榜 Top 50"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnKkNewDaily"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_weight="1"
+                android:backgroundTint="#252B37"
+                android:focusable="true"
+                android:text="✨ 新歌日榜 Top 50"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <HorizontalScrollView
             android:id="@+id/wordCountBar"

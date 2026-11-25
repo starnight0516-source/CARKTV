@@ -145,6 +145,9 @@ object CorpSongRepository {
             AutoPlayMode.MIXED -> all
             AutoPlayMode.MANDARIN -> all.filter { it.lang == "ZH" }
             AutoPlayMode.TAIWANESE -> all.filter { it.lang == "TW" }
+            AutoPlayMode.KKBOX_ALL -> KkboxChartRepository.getCachedKkboxSongsByLang(context, null)
+            AutoPlayMode.KKBOX_ZH -> KkboxChartRepository.getCachedKkboxSongsByLang(context, "ZH")
+            AutoPlayMode.KKBOX_TW -> KkboxChartRepository.getCachedKkboxSongsByLang(context, "TW")
         }.ifEmpty { all }
     }
 
@@ -156,6 +159,14 @@ object CorpSongRepository {
                 mergeLists(saved, getBuiltInSongs(cat))
             }
             for (song in list) {
+                val key = "${song.title}_${song.artist}"
+                if (!merged.containsKey(key)) {
+                    merged[key] = song
+                }
+            }
+        }
+        if (context != null) {
+            for (song in KkboxChartRepository.getAllCachedKkboxSongs(context)) {
                 val key = "${song.title}_${song.artist}"
                 if (!merged.containsKey(key)) {
                     merged[key] = song

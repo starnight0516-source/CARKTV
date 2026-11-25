@@ -46,12 +46,20 @@ class RemoteControlServer(
                 }
                 uri == "/api/catalog" -> {
                     val catStr = params["cat"]?.firstOrNull() ?: "HOT"
-                    val cat = try {
-                        SongCategory.valueOf(catStr)
-                    } catch (_: Exception) {
-                        SongCategory.HOT
+                    val songs = when (catStr) {
+                        "KK_ZH_SONG" -> runBlocking { KkboxChartRepository.getChart(context, KkboxChartType.ZH_SONG) }
+                        "KK_ZH_NEW" -> runBlocking { KkboxChartRepository.getChart(context, KkboxChartType.ZH_NEW) }
+                        "KK_TW_SONG" -> runBlocking { KkboxChartRepository.getChart(context, KkboxChartType.TW_SONG) }
+                        "KK_TW_NEW" -> runBlocking { KkboxChartRepository.getChart(context, KkboxChartType.TW_NEW) }
+                        else -> {
+                            val cat = try {
+                                SongCategory.valueOf(catStr)
+                            } catch (_: Exception) {
+                                SongCategory.HOT
+                            }
+                            runBlocking { CorpSongRepository.getSongs(context, cat, allowNetwork = false) }
+                        }
                     }
-                    val songs = runBlocking { CorpSongRepository.getSongs(context, cat, allowNetwork = false) }
                     jsonResponse(songsToJson(songs))
                 }
                 uri == "/api/search" -> {
@@ -166,6 +174,10 @@ class RemoteControlServer(
 
   <div class="tabs">
     <button id="t_HOT" class="tab active" onclick="loadCat('HOT')">新歌排行</button>
+    <button id="t_KK_ZH_SONG" class="tab" onclick="loadCat('KK_ZH_SONG')">KK華語單曲</button>
+    <button id="t_KK_ZH_NEW" class="tab" onclick="loadCat('KK_ZH_NEW')">KK華語新歌</button>
+    <button id="t_KK_TW_SONG" class="tab" onclick="loadCat('KK_TW_SONG')">KK台語單曲</button>
+    <button id="t_KK_TW_NEW" class="tab" onclick="loadCat('KK_TW_NEW')">KK台語新歌</button>
     <button id="t_TAIWANESE" class="tab" onclick="loadCat('TAIWANESE')">台語金曲</button>
     <button id="t_MANDARIN" class="tab" onclick="loadCat('MANDARIN')">國語熱門</button>
     <button id="t_CLASSICS" class="tab" onclick="loadCat('CLASSICS')">經典對唱</button>

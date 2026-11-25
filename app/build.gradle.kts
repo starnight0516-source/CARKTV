@@ -11,8 +11,8 @@ android {
         applicationId = "com.car.taiwanktv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "2.5.0"
+        versionCode = 11
+        versionName = "2.7.0"
         multiDexEnabled = true
     }
 
