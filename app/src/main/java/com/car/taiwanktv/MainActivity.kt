@@ -336,8 +336,7 @@ class MainActivity : AppCompatActivity() {
         binding.rvQueue.adapter = queueAdapter
     }
 
-    private fun setupControls()
-        startRemoteServer() {
+    private fun setupControls() {
         binding.btnPrev.setOnClickListener { playPreviousSong() }
         binding.btnNext.setOnClickListener { playNextOrAutoContinue() }
 

@@ -239,22 +239,30 @@ class RemoteControlServer(
     refreshStatus();
   }
 
+  let currentCatalog = [];
+
   function renderCatalog(songs) {
+    currentCatalog = songs || [];
     const el = document.getElementById('songList');
-    if (!songs || songs.length === 0) {
+    if (currentCatalog.length === 0) {
       el.innerHTML = '<div class="empty">找不到相關歌曲</div>';
       return;
     }
-    el.innerHTML = songs.map((s, idx) => `
-      <div class="card">
-        <div class="info">
-          <div class="title">${idx + 1}. ${escapeHtml(s.title)}</div>
-          <div class="artist">${escapeHtml(s.artist || '精選 MV')}</div>
-        </div>
-        <button class="btn-sm btn-cut" onclick='orderSong(${JSON.stringify(s)}, 1)'>插播</button>
-        <button class="btn-sm btn-add" onclick='orderSong(${JSON.stringify(s)}, 0)'>+ 點歌</button>
-      </div>
-    `).join('');
+    el.innerHTML = currentCatalog.map(function(s, idx) {
+      return '<div class="card">' +
+        '<div class="info">' +
+          '<div class="title">' + (idx + 1) + '. ' + escapeHtml(s.title) + '</div>' +
+          '<div class="artist">' + escapeHtml(s.artist || '精選 MV') + '</div>' +
+        '</div>' +
+        '<button class="btn-sm btn-cut" onclick="orderByIdx(' + idx + ', 1)">插播</button>' +
+        '<button class="btn-sm btn-add" onclick="orderByIdx(' + idx + ', 0)">+ 點歌</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  function orderByIdx(idx, cutIn) {
+    const song = currentCatalog[idx];
+    if (song) orderSong(song, cutIn);
   }
 
   function renderQueue() {
@@ -263,17 +271,17 @@ class RemoteControlServer(
       el.innerHTML = '<div class="empty">目前沒有待播歌曲，快去點歌吧！</div>';
       return;
     }
-    el.innerHTML = latestQueue.map((s, idx) => `
-      <div class="card">
-        <div class="info">
-          <div class="title">${idx + 1}. ${escapeHtml(s.title)}</div>
-          <div class="artist">${escapeHtml(s.artist || '待播清單')}</div>
-        </div>
-        <button class="btn-sm btn-add" onclick="queueAct('play', ${idx})">立刻播</button>
-        <button class="btn-sm btn-cut" onclick="queueAct('top', ${idx})">插播</button>
-        <button class="btn-sm btn-del" onclick="queueAct('remove', ${idx})">刪</button>
-      </div>
-    `).join('');
+    el.innerHTML = latestQueue.map(function(s, idx) {
+      return '<div class="card">' +
+        '<div class="info">' +
+          '<div class="title">' + (idx + 1) + '. ' + escapeHtml(s.title) + '</div>' +
+          '<div class="artist">' + escapeHtml(s.artist || '待播清單') + '</div>' +
+        '</div>' +
+        '<button class="btn-sm btn-add" onclick="queueAct(\'play\', ' + idx + ')">立刻播</button>' +
+        '<button class="btn-sm btn-cut" onclick="queueAct(\'top\', ' + idx + ')">插播</button>' +
+        '<button class="btn-sm btn-del" onclick="queueAct(\'remove\', ' + idx + ')">刪</button>' +
+      '</div>';
+    }).join('');
   }
 
   async function orderSong(song, cutIn) {
