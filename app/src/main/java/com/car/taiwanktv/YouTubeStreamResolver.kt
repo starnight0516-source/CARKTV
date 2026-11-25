@@ -10,13 +10,15 @@ import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.VideoStream
 import java.util.concurrent.TimeUnit
 
 data class ResolvedStream(
     val videoUrl: String?,
     val audioUrl: String?,
-    val muxedUrl: String?,
     val hlsUrl: String?,
+    val dashUrl: String?,
+    val muxedUrl: String?,
     val qualityLabel: String,
     val title: String
 )
@@ -100,11 +102,17 @@ object YouTubeStreamResolver {
             .map { it.url }
     }
 
+    private fun getEffectiveHeight(stream: VideoStream): Int {
+        if (stream.height > 0) return stream.height
+        val res = stream.resolution ?: return 0
+        val match = Regex("(\\d{3,4})p", RegexOption.IGNORE_CASE).find(res)
+        return match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+    }
+
     /**
-     * 高畫質優先解析策略：
-     * 1. 優先選取 1080p (或最高不超過 1440p) 的 MP4 / WebM 分離影像流 + 最高位元率音訊流
-     * 2. 次選 HLS 串流（搭配 ExoPlayer 強制最高位元率）
-     * 3. 最後備援為最高畫質合併串流
+     * 高畫質多層解析策略（v9）：
+     * 1. 透過 resolution 字串 + height 雙重判斷，避免 height==0 導致 1080p/720p 分離流被誤濾而掉回 360p。
+     * 2. 同時保留 videoOnly+audio、HLS、DASH、muxed 四種來源，供播放器自動降級備援。
      */
     suspend fun resolveStream(videoUrlOrId: String): ResolvedStream = withContext(Dispatchers.IO) {
         init()
@@ -117,46 +125,49 @@ object YouTubeStreamResolver {
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, fullUrl)
 
         val validVideoOnly = streamInfo.videoOnlyStreams
-            .filter { it.isUrl && it.height in 360..1440 }
+            .filter { it.isUrl && getEffectiveHeight(it) in 480..1440 }
 
-        // 優先找 1080p MP4 -> 1080p 任意格式 -> 最高畫質 MP4 -> 最高畫質任意格式
+        // 優先找 1080p MP4 -> 1080p 任意格式 -> 最高畫質 MP4 (720p/1440p) -> 最高畫質任意格式
         val bestVideo = validVideoOnly
-            .filter { it.height == 1080 && it.format?.suffix == "mp4" }
+            .filter { getEffectiveHeight(it) == 1080 && it.format?.suffix == "mp4" }
             .maxByOrNull { it.fps }
             ?: validVideoOnly
-                .filter { it.height == 1080 }
+                .filter { getEffectiveHeight(it) == 1080 }
                 .maxByOrNull { it.fps }
             ?: validVideoOnly
                 .filter { it.format?.suffix == "mp4" }
-                .maxByOrNull { it.height }
+                .maxByOrNull { getEffectiveHeight(it) }
             ?: validVideoOnly
-                .maxByOrNull { it.height }
+                .maxByOrNull { getEffectiveHeight(it) }
 
-        // 音訊優先選最高位元率 m4a/mp4，次選任意最高位元率音訊
         val validAudio = streamInfo.audioStreams.filter { it.isUrl }
         val bestAudio = validAudio
             .filter { it.format?.suffix == "m4a" || it.format?.mimeType?.contains("mp4") == true }
             .maxByOrNull { it.averageBitrate }
             ?: validAudio.maxByOrNull { it.averageBitrate }
 
+        val hls = streamInfo.hlsUrl?.takeIf { it.isNotBlank() }
+        val dash = streamInfo.dashMpdUrl?.takeIf { it.isNotBlank() }
+
         val muxed = streamInfo.videoStreams
             .filter { it.isUrl }
-            .maxByOrNull { it.height }
+            .maxByOrNull { getEffectiveHeight(it) }
 
-        val hls = streamInfo.hlsUrl?.takeIf { it.isNotBlank() }
-
+        val bestHeight = bestVideo?.let { getEffectiveHeight(it) } ?: 0
         val label = when {
-            bestVideo != null && bestAudio != null -> "${bestVideo.height}P HD"
             hls != null -> "HLS HD"
-            muxed != null -> "${muxed.height}P"
+            bestVideo != null && bestAudio != null -> "${bestHeight}P HD"
+            dash != null -> "DASH HD"
+            muxed != null -> "${getEffectiveHeight(muxed)}P"
             else -> "HD"
         }
 
         ResolvedStream(
             videoUrl = bestVideo?.content,
             audioUrl = bestAudio?.content,
-            muxedUrl = muxed?.content,
             hlsUrl = hls,
+            dashUrl = dash,
+            muxedUrl = muxed?.content,
             qualityLabel = label,
             title = streamInfo.name ?: ""
         )

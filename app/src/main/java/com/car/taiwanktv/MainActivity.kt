@@ -22,9 +22,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -52,6 +55,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var queueAdapter: QueueAdapter
 
     private var currentSong: SongItem? = null
+    private var currentResolvedStream: ResolvedStream? = null
+    private var currentPlaybackTier: Int = 0
     private var currentCategory: SongCategory = SongCategory.HOT
     private var currentAutoPlayMode: AutoPlayMode = AutoPlayMode.MIXED
     private var isAudioOnly = false
@@ -142,6 +147,26 @@ class MainActivity : AppCompatActivity() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updateMediaSessionPlaybackState()
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.height > 0) {
+                    val h = videoSize.height
+                    val tag = if (h >= 720) "${h}P HD" else "${h}P"
+                    binding.tvQualityBadge.text = tag
+                    binding.tvQualityBadge.setTextColor(
+                        if (h >= 720) Color.parseColor("#00E676") else Color.parseColor("#FFD54F")
+                    )
+                    binding.tvQualityBadge.visibility = View.VISIBLE
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                val resolved = currentResolvedStream
+                if (resolved != null && tryNextPlaybackTier(resolved)) {
+                    return
+                }
+                Toast.makeText(this@MainActivity, "串流播放異常，嘗試切換下一首", Toast.LENGTH_SHORT).show()
             }
         })
     }
@@ -816,32 +841,69 @@ class MainActivity : AppCompatActivity() {
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun startExoPlayer(resolved: ResolvedStream) {
+        currentResolvedStream = resolved
+        currentPlaybackTier = 0
+        if (!tryNextPlaybackTier(resolved)) {
+            throw Exception("沒有可用的影音串流")
+        }
+    }
+
+    /**
+     * 高畫質多層串流優先順序：
+     * Tier 1: HLS 高畫質自適應串流（強制最高位元率，最不易被 403 阻擋）
+     * Tier 2: 1080p/720p 分離影像 + 高音質音訊合併 (MergingMediaSource)
+     * Tier 3: DASH 高畫質串流 (DashMediaSource)
+     * Tier 4: 傳統合併串流 (Muxed 備援)
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun tryNextPlaybackTier(resolved: ResolvedStream): Boolean {
         val dataSourceFactory = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
-        when {
-            resolved.videoUrl != null && resolved.audioUrl != null -> {
-                val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(resolved.videoUrl))
-                val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(resolved.audioUrl))
-                val mergedSource = MergingMediaSource(videoSource, audioSource)
-                player.setMediaSource(mergedSource)
+        while (currentPlaybackTier < 4) {
+            currentPlaybackTier++
+            when (currentPlaybackTier) {
+                1 -> if (resolved.hlsUrl != null) {
+                    val hlsSource = HlsMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(resolved.hlsUrl))
+                    player.setMediaSource(hlsSource)
+                    player.prepare()
+                    player.play()
+                    updateMediaSessionPlaybackState()
+                    return true
+                }
+                2 -> if (resolved.videoUrl != null && resolved.audioUrl != null) {
+                    val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(resolved.videoUrl))
+                    val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(resolved.audioUrl))
+                    val mergedSource = MergingMediaSource(videoSource, audioSource)
+                    player.setMediaSource(mergedSource)
+                    player.prepare()
+                    player.play()
+                    updateMediaSessionPlaybackState()
+                    return true
+                }
+                3 -> if (resolved.dashUrl != null) {
+                    val dashSource = DashMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(resolved.dashUrl))
+                    player.setMediaSource(dashSource)
+                    player.prepare()
+                    player.play()
+                    updateMediaSessionPlaybackState()
+                    return true
+                }
+                4 -> if (resolved.muxedUrl != null) {
+                    player.setMediaItem(MediaItem.fromUri(resolved.muxedUrl))
+                    player.prepare()
+                    player.play()
+                    updateMediaSessionPlaybackState()
+                    return true
+                }
             }
-            resolved.hlsUrl != null -> {
-                val hlsSource = HlsMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(resolved.hlsUrl))
-                player.setMediaSource(hlsSource)
-            }
-            resolved.muxedUrl != null -> {
-                player.setMediaItem(MediaItem.fromUri(resolved.muxedUrl))
-            }
-            else -> throw Exception("沒有可用的影音串流")
         }
-
-        player.prepare()
-        player.play()
-        updateMediaSessionPlaybackState()
+        return false
     }
 
     private fun updateQueueBadge() {
